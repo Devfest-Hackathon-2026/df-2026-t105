@@ -16,13 +16,20 @@ await page.click("#demoBtn");
 await page.waitForFunction(() => /事前に生成した2案を表示|読み込めません/.test(document.getElementById("status")?.textContent ?? ""));
 console.log(`${Date.now() - t0}ms`, await page.textContent("#status"));
 console.log("alts:", (await page.textContent("#alts"))?.replace(/\s+/g, " "));
-console.log("bars:", (await page.textContent("#barAccept"))?.replace(/\s+/g, " "));
-await page.screenshot({ path: `${outDir}/1-demo.png` });
-await page.click('[data-bar="0"]');
-await page.click('[data-bar="1"]');
-await page.keyboard.press("2");
-await page.click('[data-bar="3"]');
-console.log("after bar accept:", (await page.textContent("#tracks"))?.replace(/\s+/g, " "), "|", (await page.textContent("#alts"))?.replace(/\s+/g, " "));
+console.log("takes:", await page.locator(".take-lane").count(), "lanes,", await page.locator(".take-bar").count(), "bars");
+const leadNotes = () => page.evaluate(() => JSON.parse(localStorage.getItem("ghostnotes.project.v1")).tracks.lead.notes.length);
+// テイクのレーン: 案A の1・2小節目と、案B の4小節目を取り込む（コンピング）
+await page.click('.take-bar[data-take="0"][data-bar="0"]');
+await page.click('.take-bar[data-take="0"][data-bar="1"]');
+await page.click('.take-bar[data-take="1"][data-bar="3"]');
+const afterComp = await leadNotes();
+console.log("comped lead notes:", afterComp, "| pressed:", await page.locator('.take-bar[aria-pressed="true"]').count());
+// もう一度押すと元に戻る
+await page.click('.take-bar[data-take="1"][data-bar="3"]');
+const afterUncomp = await leadNotes();
+console.log("after un-comp bar 4:", afterUncomp, "| pressed:", await page.locator('.take-bar[aria-pressed="true"]').count());
+await page.click('.take-bar[data-take="1"][data-bar="3"]');
+console.log("after re-comp:", await leadNotes(), "| alts:", (await page.textContent("#alts"))?.replace(/\s+/g, " "));
 await page.fill("#reason", "前半は案A のフルートの音の流れ、最後は案B の上がり方が意図に近かった");
 await page.click("#close");
 console.log("log:", (await page.textContent("#log"))?.replace(/\s+/g, " "));

@@ -4,6 +4,9 @@ const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const BLACK = [1, 3, 6, 8, 10];
 /** これだけ動いたらドラッグ（移動・リサイズ）、動かなければクリック（削除）とみなす距離（px） */
 const CLICK_RADIUS = 4;
+/** 左の鍵盤の幅と、上の小節の目盛りの高さ。テイクのレーンとベロシティ欄もこの幅を空けて列をそろえる */
+export const KEY_W = 56;
+export const RULER_H = 22;
 
 /** ピアノロール。本物のノートは塗り、ゴーストは確信度に応じた濃さの枠で描く */
 export class Roll {
@@ -11,7 +14,9 @@ export class Roll {
   track: TrackId = "lead";
   playStep = -1;
   private hover: { step: number; pitch: number } | null = null;
-  private labelW = 44;
+  private labelW = KEY_W;
+  /** 鍵盤をクリックしたときに音を鳴らす */
+  onAudition: (pitch: number) => void = () => {};
   /** ドラッグ中の状態。next はドラッグ先のノートで、pointerup で onEdit に渡す */
   private drag: {
     pointerId: number;
@@ -63,13 +68,13 @@ export class Roll {
     const rows = this.rows();
     const steps = this.get().bars * 16;
     const cw = (r.width - this.labelW) / steps;
-    const rh = r.height / rows.length;
+    const rh = (r.height - RULER_H) / rows.length;
     return { r, rows, steps, cw, rh };
   }
 
   private hit(e: PointerEvent) {
     const { r, rows, steps, cw, rh } = this.geom();
-    const x = e.clientX - r.left - this.labelW, y = e.clientY - r.top;
+    const x = e.clientX - r.left - this.labelW, y = e.clientY - r.top - RULER_H;
     if (x < 0) return null;
     const step = Math.floor(x / cw), row = Math.floor(y / rh);
     if (step < 0 || step >= steps || row < 0 || row >= rows.length) return null;
@@ -83,8 +88,8 @@ export class Roll {
     | { kind: "ghost"; note: Note }
     | { kind: "note"; note: Note; edge: boolean } {
     const { r, rows, steps, cw, rh } = this.geom();
-    const x = e.clientX - r.left - this.labelW, y = e.clientY - r.top;
-    if (x < 0) return { kind: "outside" };
+    const x = e.clientX - r.left - this.labelW, y = e.clientY - r.top - RULER_H;
+    if (x < 0 || y < 0) return { kind: "outside" };
     const step = Math.floor(x / cw), row = Math.floor(y / rh);
     if (step < 0 || step >= steps || row < 0 || row >= rows.length) return { kind: "outside" };
     const pitch = rows[row].pitch;
@@ -103,6 +108,16 @@ export class Roll {
 
   private onPointerDown(e: PointerEvent) {
     if (this.drag) return; // すでにドラッグ中（2本目の指など）は無視
+    {
+      // 左の鍵盤を押したら、その高さの音を鳴らす
+      const { r, rows, rh } = this.geom();
+      const x = e.clientX - r.left, y = e.clientY - r.top - RULER_H;
+      if (x < this.labelW && y >= 0) {
+        const row = rows[Math.floor(y / rh)];
+        if (row) this.onAudition(row.pitch);
+        return;
+      }
+    }
     const p = this.probe(e);
     if (p.kind === "ghost") {
       // ゴーストは従来どおり、その場で採用・消去
@@ -195,47 +210,65 @@ export class Roll {
   /** ポインターの下にあるものに合わせてカーソルを変える */
   private updateCursor(e: PointerEvent) {
     const p = this.probe(e);
-    this.canvas.style.cursor =
-      p.kind === "outside" ? "default" : p.kind === "ghost" ? "pointer" : p.kind === "empty" ? "crosshair" : p.edge ? "ew-resize" : "grab";
+    const r = this.canvas.getBoundingClientRect();
+    const onKeys = e.clientX - r.left < this.labelW && e.clientY - r.top > RULER_H;
+    this.canvas.style.cursor = onKeys
+      ? "pointer"
+      : p.kind === "outside" ? "default" : p.kind === "ghost" ? "pointer" : p.kind === "empty" ? "crosshair" : p.edge ? "ew-resize" : "grab";
   }
 
   draw() {
     const dpr = devicePixelRatio || 1;
     const { r, rows, steps, cw, rh } = this.geom();
-    if (this.canvas.width !== Math.round(r.width * dpr)) { this.canvas.width = Math.round(r.width * dpr); this.canvas.height = Math.round(r.height * dpr); }
+    if (this.canvas.width !== Math.round(r.width * dpr) || this.canvas.height !== Math.round(r.height * dpr)) {
+      this.canvas.width = Math.round(r.width * dpr);
+      this.canvas.height = Math.round(r.height * dpr);
+    }
     const c = this.ctx;
     const css = getComputedStyle(document.documentElement);
     const v = (n: string) => css.getPropertyValue(n).trim();
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, r.width, r.height);
-    const L = this.labelW;
+    const L = this.labelW, T = RULER_H;
+    const font = getComputedStyle(document.body).fontFamily;
+    const drums = this.track === "drums";
+    const bars = steps / 16;
 
+    // 行の背景（黒鍵の行は少し沈める）
     rows.forEach((row, i) => {
       c.fillStyle = row.black ? v("--roll-black") : v("--roll-white");
-      c.fillRect(L, i * rh, r.width - L, rh);
-      c.fillStyle = v("--muted");
-      c.font = "11px ui-monospace, monospace";
-      c.textBaseline = "middle";
-      if (row.label) c.fillText(row.label, 6, i * rh + rh / 2);
+      c.fillRect(L, T + i * rh, r.width - L, rh);
     });
+    // 縦の格子: 16分、拍、小節
     for (let s = 0; s <= steps; s++) {
-      c.fillStyle = s % 16 === 0 ? v("--grid-bar") : s % 4 === 0 ? v("--grid-beat") : v("--grid");
-      c.fillRect(L + s * cw - (s % 16 === 0 ? 1 : 0.5), 0, s % 16 === 0 ? 2 : 1, r.height);
+      const bar = s % 16 === 0, beat = s % 4 === 0;
+      c.fillStyle = bar ? v("--grid-bar") : beat ? v("--grid-beat") : v("--grid");
+      c.fillRect(Math.round(L + s * cw) - (bar ? 1 : 0), T, bar ? 1.5 : 1, r.height - T);
     }
+    // オクターブの境目（C の上）に横線
+    if (!drums) {
+      c.fillStyle = v("--grid-beat");
+      rows.forEach((row, i) => { if (row.pitch % 12 === 11) c.fillRect(L, T + i * rh, r.width - L, 1); });
+    }
+    // 再生位置
     if (this.playStep >= 0) {
+      c.fillStyle = v("--playhead-soft");
+      c.fillRect(L + this.playStep * cw, T, cw, r.height - T);
       c.fillStyle = v("--playhead");
-      c.fillRect(L + this.playStep * cw, 0, cw, r.height);
+      c.fillRect(L + this.playStep * cw, T, 1.5, r.height - T);
     }
-    const y = (p: number) => rows.findIndex((row) => row.pitch === p) * rh;
+
+    const y = (p: number) => T + rows.findIndex((row) => row.pitch === p) * rh;
     const t = this.get().tracks[this.track];
+    const noteColor = v(`--track-${this.track}`);
     /** ノートを1個描く。mul で薄くできる（ドラッグ元のプレビュー用） */
     const note = (n: Note, mul = 1) => {
       const yy = y(n.pitch);
-      if (yy < 0) return;
-      c.fillStyle = v("--note");
-      c.globalAlpha = (0.55 + 0.45 * n.vel) * mul;
+      if (yy < T) return;
+      c.fillStyle = noteColor;
+      c.globalAlpha = (0.6 + 0.4 * n.vel) * mul;
       c.beginPath();
-      c.roundRect(L + n.step * cw + 1, yy + 1, n.len * cw - 2, rh - 2, 3);
+      c.roundRect(L + n.step * cw + 1, yy + 1, Math.max(3, n.len * cw - 2), rh - 2, 3);
       c.fill();
       c.globalAlpha = 1;
     };
@@ -247,17 +280,18 @@ export class Roll {
       note(this.drag.note, 0.25); // 元の位置は薄く
       note(this.drag.next); // 新しい位置は通常色でライブプレビュー
     }
+    // 提案（ゴースト）: 紫の枠。確からしい音は実線、誤検出かもしれない音は点線
     t.ghost?.notes.forEach((n, i) => {
       const yy = y(n.pitch);
-      if (yy < 0) return;
+      if (yy < T) return;
       const conf = t.ghost!.conf[i] ?? 0.5;
       c.strokeStyle = v("--ghost");
       c.fillStyle = v("--ghost");
-      c.globalAlpha = 0.12 + 0.25 * conf;
+      c.globalAlpha = 0.1 + 0.2 * conf;
       c.beginPath();
-      c.roundRect(L + n.step * cw + 1.5, yy + 1.5, n.len * cw - 3, rh - 3, 3);
+      c.roundRect(L + n.step * cw + 1.5, yy + 1.5, Math.max(3, n.len * cw - 3), rh - 3, 3);
       c.fill();
-      c.globalAlpha = 0.45 + 0.55 * conf;
+      c.globalAlpha = 0.5 + 0.5 * conf;
       c.setLineDash(conf > 0.6 ? [] : [3, 3]);
       c.lineWidth = 1.5;
       c.stroke();
@@ -267,7 +301,62 @@ export class Roll {
     if (this.hover && !this.drag) {
       const yy = y(this.hover.pitch);
       c.strokeStyle = v("--muted");
+      c.lineWidth = 1;
       c.strokeRect(L + this.hover.step * cw + 0.5, yy + 0.5, cw - 1, rh - 1);
+    }
+
+    // 左の鍵盤（ドラムは楽器名）
+    c.fillStyle = v("--surface-2");
+    c.fillRect(0, T, L, r.height - T);
+    c.font = `11px ${font}`;
+    c.textBaseline = "middle";
+    rows.forEach((row, i) => {
+      const yy = T + i * rh;
+      if (drums) {
+        c.fillStyle = v("--text");
+        c.fillText(row.label, 8, yy + rh / 2);
+        c.fillStyle = v("--line");
+        c.fillRect(0, yy + rh - 1, L, 1);
+        return;
+      }
+      c.fillStyle = row.black ? v("--key-black") : v("--key-white");
+      c.fillRect(0, yy, row.black ? L * 0.62 : L, rh);
+      if (row.black) {
+        c.fillStyle = v("--key-white");
+        c.fillRect(L * 0.62, yy, L * 0.38, rh);
+      }
+      c.fillStyle = v("--key-line");
+      c.fillRect(0, yy + rh - 0.5, L, 0.5);
+      if (row.pitch % 12 === 0 && rh >= 8) {
+        c.fillStyle = v("--key-black");
+        c.textAlign = "right";
+        c.fillText(`C${Math.floor(row.pitch / 12) - 1}`, L - 5, yy + rh / 2);
+        c.textAlign = "left";
+      }
+    });
+    c.fillStyle = v("--line");
+    c.fillRect(L - 1, T, 1, r.height - T);
+
+    // 上の小節の目盛り
+    c.fillStyle = v("--ruler");
+    c.fillRect(0, 0, r.width, T);
+    c.fillStyle = v("--line");
+    c.fillRect(0, T - 1, r.width, 1);
+    c.font = `600 11px ${font}`;
+    for (let b = 0; b < bars; b++) {
+      const x = L + b * 16 * cw;
+      c.fillStyle = v("--grid-bar");
+      c.fillRect(Math.round(x), 0, 1, T);
+      for (let q = 1; q < 4; q++) c.fillRect(Math.round(x + q * 4 * cw), T - 6, 1, 6);
+      c.fillStyle = v("--text");
+      c.fillText(String(b + 1), x + 5, T / 2);
+    }
+    if (this.playStep >= 0) {
+      const x = L + this.playStep * cw;
+      c.fillStyle = v("--playhead");
+      c.beginPath();
+      c.moveTo(x - 5, 2); c.lineTo(x + 5, 2); c.lineTo(x, 9); c.closePath();
+      c.fill();
     }
   }
 }

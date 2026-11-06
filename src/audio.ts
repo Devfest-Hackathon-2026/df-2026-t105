@@ -193,6 +193,11 @@ export class Engine {
   setBpm(bpm: number) {
     Tone.getTransport().bpm.value = bpm;
   }
+  /** 鍵盤を押したときなどに、その場で1音鳴らす */
+  async audition(id: TrackId, pitch: number) {
+    await Tone.start();
+    trigger(this.ins, id, { step: 0, len: 2, pitch, vel: 0.8 }, Tone.now() + 0.01, 60 / this.get().bpm / 4, false);
+  }
   setBars(bars: number) {
     Tone.getTransport().loopEnd = `${bars}m`;
   }

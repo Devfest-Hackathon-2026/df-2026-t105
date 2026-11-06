@@ -5,7 +5,8 @@ import { cleanToGhost, estimateKey, NOTE_NAMES } from "./core/clean.js";
 import { downloadMidi, toMidiFile } from "./core/midi.js";
 import { explainGhost, intentToSpecs } from "./gemini";
 import { buildClipPrompt, generate, generateClip, serverConfig, slice, type ClipModel } from "./lyria";
-import { Roll } from "./roll";
+import { KEY_W, Roll } from "./roll";
+import { VelocityLane } from "./velocity";
 import { demoProject, load, save, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
 import { toMono22k, transcribe, warmUp } from "./transcribe";
 import { estimateStartSec, transcribeDrums } from "./core/drums.js";
@@ -15,7 +16,15 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 
 const engine = new Engine(() => project);
 const roll = new Roll($("roll"), () => project, onEdit);
-engine.onStep = (s) => { roll.playStep = s; roll.draw(); };
+roll.onAudition = (pitch) => engine.audition(roll.track, pitch);
+const vel = new VelocityLane($("vel"), () => project, () => roll.track, (id, n, v) => onEdit("move", id, n, { ...n, vel: v }));
+engine.onStep = (s) => {
+  roll.playStep = s;
+  roll.draw();
+  $("position").textContent = s < 0 ? "1.1.1" : `${Math.floor(s / 16) + 1}.${Math.floor((s % 16) / 4) + 1}.${(s % 4) + 1}`;
+};
+// OS のダークモードを切り替えたら、canvas も描き直す
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderAll());
 
 // ---------- API キー ----------
 const KEY_STORE = "ghostnotes.apiKey";
@@ -27,12 +36,22 @@ function safeSet(k: string, v: string) { try { localStorage.setItem(k, v); } cat
 
 // ---------- トランスポート ----------
 const playBtn = $<HTMLButtonElement>("play");
+function renderPlay(playing: boolean) {
+  playBtn.querySelector("use")!.setAttribute("href", playing ? "#i-stop" : "#i-play");
+  playBtn.setAttribute("aria-label", playing ? "停止" : "再生");
+  playBtn.setAttribute("aria-pressed", String(playing));
+}
 playBtn.onclick = async () => {
   const willPlay = !engine.playing;
   stopPreview();
   if (willPlay) await engine.start();
   else engine.stop();
-  playBtn.textContent = willPlay ? "■ 停止" : "▶ 再生";
+  renderPlay(willPlay);
+};
+$("toStart").onclick = async () => {
+  const was = engine.playing;
+  engine.stop();
+  if (was) await engine.start();
 };
 const bpmInput = $<HTMLInputElement>("bpm");
 bpmInput.value = String(project.bpm);
@@ -63,6 +82,8 @@ $("reset").onclick = () => {
   engine.setLyria(null);
   bpmInput.value = String(project.bpm);
   keySel.value = project.root;
+  barsSel.value = String(project.bars);
+  engine.setBars(project.bars);
   commit();
 };
 
@@ -103,24 +124,62 @@ function renderTracks() {
   for (const t of Object.values(project.tracks)) {
     const row = document.createElement("div");
     row.className = "track" + (roll.track === t.id ? " selected" : "");
-    const g = t.ghost ? `<span class="badge">ゴースト ${t.ghost.notes.length}</span>` : "";
+    row.style.setProperty("--tc", `var(--track-${t.id})`);
     const presets = t.id === "drums" ? null : PRESETS[t.id];
     const presetSel = presets
       ? `<select class="preset" aria-label="${t.name} の音色">${presets.map((p) => `<option value="${p.id}" ${p.id === (t.preset ?? presets[0].id) ? "selected" : ""}>${p.name}</option>`).join("")}</select>`
-      : "";
-    row.innerHTML = `<button class="track-name">${t.name}</button>${g}<span class="count">${t.notes.length}音</span>${presetSel}
+      : `<span class="hint preset">ドラムキット</span>`;
+    const ghost = t.ghost ? `<span class="ghost-badge" title="提案があります" aria-label="提案あり"></span>` : "";
+    row.innerHTML = `<span class="dot"></span>
+      <button class="track-name" title="${t.name} をエディタで開く">${t.name}<span class="count">${t.notes.length}音</span>${ghost}</button>
+      <button class="solo" aria-pressed="${!!t.solo}" title="ソロ（このトラックだけ鳴らす）">S</button>
+      <button class="mute" aria-pressed="${t.mute}" title="ミュート">M</button>
+      <canvas class="clip" aria-hidden="true"></canvas>
       <input class="vol" type="range" min="-24" max="6" step="1" value="${t.volume ?? 0}" aria-label="${t.name} の音量" title="音量 ${t.volume ?? 0} dB" />
-      <button class="solo" aria-pressed="${!!t.solo}" title="ソロ">S</button><button class="mute" aria-pressed="${t.mute}" title="ミュート">M</button>`;
-    row.querySelector<HTMLButtonElement>(".track-name")!.onclick = () => { roll.track = t.id; targetSel.value = t.id; renderAll(); };
+      ${presetSel}`;
+    const select = () => { roll.track = t.id; if (t.id !== "drums" || targetSel.querySelector('option[value="drums"]')) targetSel.value = t.id; renderAll(); };
+    row.querySelector<HTMLButtonElement>(".track-name")!.onclick = select;
+    row.querySelector<HTMLCanvasElement>(".clip")!.onclick = select;
     row.querySelector<HTMLButtonElement>(".mute")!.onclick = () => { t.mute = !t.mute; commit(); };
     row.querySelector<HTMLButtonElement>(".solo")!.onclick = () => { t.solo = !t.solo; commit(); };
-    const vol = row.querySelector<HTMLInputElement>(".vol")!;
-    vol.oninput = () => { t.volume = Number(vol.value); vol.title = `音量 ${t.volume} dB`; engine.applyTrackSettings(); };
-    vol.onchange = () => commit();
-    const ps = row.querySelector<HTMLSelectElement>(".preset");
+    const volIn = row.querySelector<HTMLInputElement>(".vol")!;
+    volIn.oninput = () => { t.volume = Number(volIn.value); volIn.title = `音量 ${t.volume} dB`; engine.applyTrackSettings(); };
+    volIn.onchange = () => commit();
+    const ps = row.querySelector<HTMLSelectElement>("select.preset");
     if (ps) ps.onchange = () => { t.preset = ps.value; commit(); };
     box.appendChild(row);
+    drawClip(row.querySelector<HTMLCanvasElement>(".clip")!, t.id);
   }
+}
+
+/** トラック一覧の小さなクリップ表示（アレンジ画面のクリップの代わり）。ループ全体の音を縮めて描く */
+function drawClip(cv: HTMLCanvasElement, id: TrackId) {
+  const r = cv.getBoundingClientRect();
+  const dpr = devicePixelRatio || 1;
+  cv.width = Math.max(1, Math.round(r.width * dpr));
+  cv.height = Math.max(1, Math.round(r.height * dpr));
+  const c = cv.getContext("2d")!;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const css = getComputedStyle(document.documentElement);
+  const v = (n: string) => css.getPropertyValue(n).trim();
+  const t = project.tracks[id];
+  const steps = project.bars * 16;
+  const notes = [...t.notes, ...(t.ghost?.notes ?? [])];
+  if (!notes.length) return;
+  const ps = notes.map((n) => n.pitch);
+  const lo = Math.min(...ps), hi = Math.max(...ps);
+  const span = Math.max(6, hi - lo + 1);
+  const cw = r.width / steps, rh = (r.height - 6) / span;
+  c.fillStyle = v("--line");
+  for (let b = 1; b < project.bars; b++) c.fillRect(Math.round(b * 16 * cw), 0, 1, r.height);
+  const draw = (n: Note, color: string, a: number) => {
+    c.globalAlpha = a;
+    c.fillStyle = color;
+    c.fillRect(n.step * cw, 3 + (hi - n.pitch) * rh, Math.max(1.5, n.len * cw - 0.5), Math.max(1.5, rh));
+  };
+  for (const n of t.ghost?.notes ?? []) draw(n, v("--ghost"), 0.45);
+  for (const n of t.notes) draw(n, v(`--track-${id}`), 1);
+  c.globalAlpha = 1;
 }
 
 export type EditKind = "add" | "remove" | "accept" | "reject" | "move" | "resize";
@@ -500,21 +559,87 @@ function reclean(ampRatio: number) {
   commit();
 }
 
-/** 1小節ぶんのゴーストをまとめて採用する（1音ずつ選ぶのが難しいとき用） */
-function acceptBar(bar: number) {
-  const g = project.tracks[roll.track].ghost;
-  if (!g) return;
-  for (const n of g.notes.filter((x) => Math.floor(x.step / 16) === bar)) onEdit("accept", roll.track, n);
+// ---------- テイクのレーン（案A／案B）と、小節単位の取り込み（コンピング） ----------
+// DAW の「テイクを並べて、良い小節だけを選んで1本にまとめる」操作と同じ。小節を押すと、
+// トラックのその小節の音を、そのテイクの音で置き換える。もう一度押すと元に戻る（元に戻す操作でも戻せる）。
+type CompState = { backup: Record<number, Note[]>; from: Record<number, number> };
+const comps: Partial<Record<TrackId, CompState>> = {};
+
+function compBar(k: number, bar: number) {
+  const id = roll.track;
+  const t = project.tracks[id];
+  const alt = t.alts?.[k];
+  if (!alt) return;
+  const st = (comps[id] ??= { backup: {}, from: {} });
+  const inBar = (n: Note) => Math.floor(n.step / 16) === bar;
+  const entry = project.log[alt.logIndex];
+  if (st.from[bar] === k) {
+    const removed = t.notes.filter(inBar).length;
+    t.notes = t.notes.filter((n) => !inBar(n)).concat(st.backup[bar] ?? []);
+    delete st.from[bar];
+    delete st.backup[bar];
+    alt.accepted = Math.max(0, alt.accepted - removed);
+    if (entry) entry.accepted = Math.max(0, entry.accepted - removed);
+  } else {
+    if (st.from[bar] !== undefined) {
+      const prev = t.alts?.[st.from[bar]];
+      const removed = t.notes.filter(inBar).length;
+      if (prev) prev.accepted = Math.max(0, prev.accepted - removed);
+      if (entry) entry.accepted = Math.max(0, entry.accepted - removed);
+    } else {
+      st.backup[bar] = t.notes.filter(inBar).map((n) => ({ ...n }));
+    }
+    const end = (bar + 1) * 16;
+    const take = alt.notes.filter(inBar).map((n) => ({ ...n, len: Math.min(n.len, end - n.step) }));
+    t.notes = t.notes.filter((n) => !inBar(n)).concat(take);
+    st.from[bar] = k;
+    alt.accepted += take.length;
+    if (entry) entry.accepted += take.length;
+  }
+  commit();
 }
-function renderBarAccept() {
-  const box = $("barAccept");
-  const g = project.tracks[roll.track].ghost;
-  box.hidden = !g;
-  if (!g) return;
-  const counts = Array.from({ length: project.bars }, (_, b) => g.notes.filter((x) => Math.floor(x.step / 16) === b).length);
-  box.innerHTML = `<span class="muted">小節ごとに採用</span>` + counts.map((c, b) =>
-    `<button data-bar="${b}" ${c ? "" : "disabled"}>${b + 1}小節目${c ? `（${c}音）` : ""}</button>`).join("");
-  for (const b of box.querySelectorAll<HTMLButtonElement>("[data-bar]")) b.onclick = () => acceptBar(Number(b.dataset.bar));
+
+function renderTakes() {
+  const box = $("takes");
+  const t = project.tracks[roll.track];
+  const alts = t.alts ?? (t.ghost ? [t.ghost] : null);
+  box.hidden = !alts;
+  if (!alts) { box.innerHTML = ""; return; }
+  const st = comps[t.id];
+  const bars = project.bars;
+  box.innerHTML = alts.map((a, k) => `
+    <div class="take-lane">
+      <button class="take-label" data-take="${k}" aria-pressed="${a === t.ghost}" title="案${a.label}をピアノロールに表示（キー ${k + 1}）">案${a.label}</button>
+      <div class="take-bars" style="grid-template-columns: repeat(${bars}, minmax(0, 1fr)); margin-right: 0">
+        ${Array.from({ length: bars }, (_, b) => {
+          const n = a.notes.filter((x) => Math.floor(x.step / 16) === b).length;
+          const on = st?.from[b] === k;
+          return `<button class="take-bar${n ? "" : " empty"}" data-take="${k}" data-bar="${b}" aria-pressed="${on}" title="${b + 1}小節目を案${a.label}の音で置き換える（${n}音）${on ? "。もう一度押すと元に戻す" : ""}"><canvas></canvas></button>`;
+        }).join("")}
+      </div>
+    </div>`).join("") + `<p class="takes-hint hint">小節を押すと、その小節を案の音で置き換えます（コンピング）。もう一度押すと元に戻ります。</p>`;
+  for (const b of box.querySelectorAll<HTMLButtonElement>(".take-label")) b.onclick = () => showAlt(t.id, Number(b.dataset.take));
+  for (const b of box.querySelectorAll<HTMLButtonElement>(".take-bar")) {
+    b.onclick = () => compBar(Number(b.dataset.take), Number(b.dataset.bar));
+    drawTakeBar(b.querySelector("canvas")!, alts[Number(b.dataset.take)], Number(b.dataset.bar));
+  }
+}
+
+function drawTakeBar(cv: HTMLCanvasElement, g: Ghost, bar: number) {
+  const r = cv.getBoundingClientRect();
+  const dpr = devicePixelRatio || 1;
+  cv.width = Math.max(1, Math.round(r.width * dpr));
+  cv.height = Math.max(1, Math.round(r.height * dpr));
+  const c = cv.getContext("2d")!;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const notes = g.notes.filter((n) => Math.floor(n.step / 16) === bar);
+  if (!notes.length) return;
+  const all = g.notes.map((n) => n.pitch);
+  const lo = Math.min(...all), hi = Math.max(...all);
+  const span = Math.max(6, hi - lo + 1);
+  const cw = r.width / 16, rh = (r.height - 6) / span;
+  c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--ghost").trim();
+  for (const n of notes) c.fillRect((n.step - bar * 16) * cw + 1, 3 + (hi - n.pitch) * rh, Math.max(2, n.len * cw - 1.5), Math.max(2, rh));
 }
 
 function acceptAll() {
@@ -534,6 +659,7 @@ function closeGhost(keepReason: boolean) {
   $<HTMLTextAreaElement>("reason").value = "";
   t.ghost = null;
   t.alts = null;
+  delete comps[t.id];
   engine.setLyria(null);
   setStatus("");
   commit();
@@ -552,8 +678,8 @@ function renderGhostPanel() {
   if (!g) return;
   const alts = t.alts ?? [g];
   $("alts").innerHTML = alts.map((a, k) =>
-    `<button data-alt="${k}" aria-pressed="${a === g}"><b>案${a.label}</b> ${esc(a.spec.title ?? "")}${a.accepted ? ` <span class="badge">採用 ${a.accepted}</span>` : ""}</button>`,
-  ).join("") + (alts.length < 2 && askBtn.disabled ? `<span class="muted">案Bを準備中…</span>` : "");
+    `<button data-alt="${k}" aria-pressed="${a === g}"><span class="take-name">案${a.label}</span> ${esc(a.spec.title ?? "")}${a.accepted ? ` <span class="badge">採用 ${a.accepted}</span>` : ""}</button>`,
+  ).join("") + (alts.length < 2 && askBtn.disabled ? `<span class="hint">案Bを準備中…</span>` : "");
   for (const b of $("alts").querySelectorAll<HTMLButtonElement>("[data-alt]")) b.onclick = () => showAlt(t.id, Number(b.dataset.alt));
   renderSpec(g.spec);
   if (g.model && g.model !== "realtime") {
@@ -568,7 +694,7 @@ function renderGhostPanel() {
 
 function renderLog() {
   const box = $("log");
-  if (!project.log.length) { box.innerHTML = `<p class="muted">まだ記録はありません。提案を受け取って「理由を残して閉じる」と、ここに残ります。</p>`; return; }
+  if (!project.log.length) { box.innerHTML = `<p class="hint">まだ記録はありません。提案を受け取って「理由を残して閉じる」と、ここに残ります。</p>`; return; }
   box.innerHTML = [...project.log].reverse().map((e) => `<li><div><b>${project.tracks[e.track]?.name ?? e.track}</b> ・ ${new Date(e.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ・ 提案 ${e.proposed} 音中 ${e.accepted} 音を採用</div>
   <div class="intent">意図: ${esc(e.intent)}${e.model ? `（${esc(e.model)}）` : ""}</div>${e.titles ? `<div class="intent">比べた案: ${e.titles.map(esc).join(" ／ ")}${e.chosen ? `（採用: 案${esc(e.chosen)}）` : ""}</div>` : ""}${e.reason ? `<div class="reason">理由: ${esc(e.reason)}</div>` : ""}</li>`).join("");
 }
@@ -590,11 +716,18 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Escape") closeGhost(false);
   else if ((e.key === "1" || e.key === "2") && project.tracks[roll.track].alts) showAlt(roll.track, Number(e.key) - 1);
   else if (e.key === " ") { e.preventDefault(); playBtn.click(); }
+  else if (e.key === "Home") { e.preventDefault(); $("toStart").click(); }
 });
 
 function setStatus(s: string, error = false) {
   statusEl.textContent = s;
   statusEl.classList.toggle("error", error);
+  // 「2/4 …」のような段階の表示から、進み具合のバーを動かす
+  const m = /^(\d)\/(\d)/.exec(s);
+  const bar = $("progressBar");
+  if (m) bar.style.width = `${(Number(m[1]) / Number(m[2])) * 100}%`;
+  else if (/案が届きました|表示しています/.test(s)) bar.style.width = "100%";
+  else if (!askBtn.disabled) bar.style.width = "0";
 }
 function esc(s: string) {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -609,12 +742,16 @@ function confirmInline(btn: HTMLElement, msg: string) {
 
 function renderAll() {
   renderTracks();
-  renderBarAccept();
+  renderTakes();
   renderGhostPanel();
   renderLog();
   renderModes();
-  $("rollTitle").textContent = project.tracks[roll.track].name;
+  const t = project.tracks[roll.track];
+  $("rollTitle").textContent = t.name;
+  $("rollMeta").textContent = `${t.notes.length}音${t.ghost ? `・提案 ${t.ghost.notes.length}音（案${t.ghost.label}）` : ""}・${project.bars}小節・${project.bpm} BPM`;
+  document.querySelector<HTMLElement>(".lg-note")!.style.background = `var(--track-${t.id})`;
   roll.draw();
+  vel.draw();
 }
 function commit() {
   recordHistory();

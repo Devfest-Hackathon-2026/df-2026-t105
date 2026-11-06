@@ -5,7 +5,8 @@ import { spawn } from "node:child_process";
 
 const URL = "http://127.0.0.1:5319/";
 const KEY = "ghostnotes.project.v1";
-const LABEL_W = 44; // 左端の音名ラベルの幅
+const LABEL_W = 56; // 左端の鍵盤の幅（roll.ts の KEY_W）
+const RULER_H = 22; // 上の小節の目盛りの高さ（roll.ts の RULER_H）
 const STEPS = 64; // デモ曲は4小節 × 16分
 const TOP_PITCH = 52; // ベースは上が pitch 52、下が 28 の25行
 
@@ -44,9 +45,9 @@ try {
     return { left: r.left, top: r.top, w: r.width, h: r.height };
   });
   const cw = (geo.w - LABEL_W) / STEPS;
-  const rh = geo.h / (TOP_PITCH - 28 + 1);
+  const rh = (geo.h - RULER_H) / (TOP_PITCH - 28 + 1);
   const cellX = (step) => geo.left + LABEL_W + (step + 0.5) * cw;
-  const rowY = (pitch) => geo.top + (TOP_PITCH - pitch + 0.5) * rh;
+  const rowY = (pitch) => geo.top + RULER_H + (TOP_PITCH - pitch + 0.5) * rh;
   const readNotes = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k)).tracks.bass.notes, KEY);
   const snap = (ns) => JSON.stringify(ns.map((n) => [n.step, n.len, n.pitch]).sort((a, b) => a[0] - b[0] || a[2] - b[2]));
 
