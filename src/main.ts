@@ -1,11 +1,11 @@
 import "./style.css";
 import { Engine } from "./audio";
 import { cleanToGhost, NOTE_NAMES } from "./core/clean.js";
-import { explainGhost, intentToSpec } from "./gemini";
+import { explainGhost, intentToSpecs } from "./gemini";
 import { generate, slice } from "./lyria";
 import { Roll } from "./roll";
 import { demoProject, load, save, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
-import { transcribe } from "./transcribe";
+import { transcribe, warmUp } from "./transcribe";
 
 let project: Project = load() ?? demoProject();
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -93,6 +93,7 @@ function onEdit(kind: "add" | "remove" | "accept" | "reject", id: TrackId, n: No
       t.notes = t.notes.filter((x) => !(x.step < n.step + n.len && n.step < x.step + x.len));
       t.notes.push(n);
       project.log[t.ghost.logIndex].accepted++;
+      t.ghost.accepted++;
     }
   }
   commit();
@@ -105,49 +106,73 @@ const askBtn = $<HTMLButtonElement>("ask");
 const statusEl = $("status");
 const monitorChk = $<HTMLInputElement>("monitor");
 
+const FALLBACK = (target: "lead" | "bass"): LyriaSpec[] =>
+  (target === "bass"
+    ? [["synth bass", "シンセベースで刻む"], ["electric bass fingered", "指弾きベースで歌う"]]
+    : [["flute", "フルートで歌う"], ["square-wave synth lead", "シンセで跳ねる"]]
+  ).map(([inst, title]) => ({
+    title,
+    prompts: [{ text: `solo monophonic dry ${inst}, single notes`, weight: 1 }],
+    density: 0.4, brightness: 0.5, guidance: 4.5,
+    rationale: "（Gemini に繋がらなかったので、既定の指示で生成しました）",
+  }));
+
 askBtn.onclick = async () => {
   const apiKey = apiKeyInput.value.trim();
   const target = targetSel.value as "lead" | "bass";
   const intent = intentInput.value.trim() || "この曲に合うシンプルなフレーズ";
   askBtn.disabled = true;
   try {
-    setStatus("1/4 意図を Lyria への指示に変換しています（Gemini）");
-    let spec: LyriaSpec;
+    setStatus("1/4 意図を2通りに解釈して、Lyria への指示にしています（Gemini）");
+    let specs: LyriaSpec[];
     try {
-      spec = await intentToSpec(apiKey, project, target, intent);
+      specs = await intentToSpecs(apiKey, project, target, intent);
     } catch (e) {
       console.warn(e);
-      spec = { prompts: [{ text: target === "bass" ? "solo synth bass, single notes, dry" : "monophonic synth lead, single notes, dry, no chords", weight: 1 }], density: 0.4, brightness: 0.5, guidance: 4.5, rationale: "（Gemini に繋がらなかったので既定の指示で生成しました）" };
+      specs = FALLBACK(target);
     }
-    renderSpec(spec);
-
     const barSec = (60 / project.bpm) * 4;
     const seconds = 2 + barSec * (project.bars + 1);
-    setStatus(`2/4 Lyria が演奏しています… 0 / ${seconds.toFixed(0)} 秒`);
-    const full = await generate(apiKey, {
-      role: target, spec, bpm: project.bpm, root: project.root, seconds,
-      ctx: engine.context, monitor: monitorChk.checked,
-      onProgress: (s) => setStatus(`2/4 Lyria が演奏しています… ${s.toFixed(0)} / ${seconds.toFixed(0)} 秒`),
+    const prog = specs.map(() => 0);
+    const showProg = () => setStatus(`2/4 Lyria が${specs.length}案を同時に演奏しています… ${Math.min(...prog).toFixed(0)} / ${seconds.toFixed(0)} 秒`);
+    showProg();
+    // 2案を同時に生成する。生成中の試聴は案Aだけ鳴らす
+    const fulls = await Promise.all(specs.map((spec, k) =>
+      generate(apiKey, {
+        role: target, spec, bpm: project.bpm, root: project.root, seconds,
+        ctx: engine.context, monitor: monitorChk.checked && k === 0,
+        onProgress: (sec) => { prog[k] = sec; showProg(); },
+      }),
+    ));
+
+    project.log.push({
+      at: new Date().toISOString(), track: target, intent, spec: specs[0], proposed: 0, accepted: 0, reason: "",
+      titles: specs.map((sp, k) => `${LABELS[k]}: ${sp.title ?? ""}`),
     });
-
-    setStatus("3/4 演奏を耳コピしています（basic-pitch）");
-    const raw = await transcribe(full, (p) => setStatus(`3/4 演奏を耳コピしています（basic-pitch） ${Math.round(p * 100)}%`));
-    const res = cleanToGhost(raw, { bpm: project.bpm, root: project.root, role: target, bars: project.bars });
-    if (!res.notes.length) throw new Error("音を拾えませんでした。もう一度試すか、意図の書き方を変えてください");
-
-    project.log.push({ at: new Date().toISOString(), track: target, intent, spec, proposed: res.notes.length, accepted: 0, reason: "" });
-    const ghost: Ghost = {
-      notes: res.notes, conf: confidence(res.notes, project.bars * 16), full, startSec: res.startSec, raw, ampRatio: 0.35,
-      spec, intent, explanation: "", logIndex: project.log.length - 1,
-    };
-    project.tracks[target].ghost = ghost;
+    const logIndex = project.log.length - 1;
+    const t = project.tracks[target];
+    t.alts = [];
     roll.track = target;
-    applyLyriaSlice(ghost);
+    for (let k = 0; k < specs.length; k++) {
+      setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch）`);
+      const raw = await transcribe(fulls[k], (p) => setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch） ${Math.round(p * 100)}%`));
+      const res = cleanToGhost(raw, { bpm: project.bpm, root: project.root, role: target, bars: project.bars });
+      const g: Ghost = {
+        notes: res.notes, conf: confidence(res.notes, project.bars * 16), full: fulls[k], startSec: res.startSec, raw, ampRatio: 0.35,
+        spec: specs[k], intent, explanation: "", logIndex, label: LABELS[k], proposed: res.notes.length, accepted: 0,
+      };
+      t.alts.push(g);
+      // 最初の案ができた時点で見せる（2案目の耳コピを待たせない）
+      if (k === 0) { showAlt(target, 0); }
+      else commit();
+      explainGhost(apiKey, project, target, g.notes, intent)
+        .catch(() => "（説明を取得できませんでした）")
+        .then((x) => { g.explanation = x; renderGhostPanel(); });
+    }
+    if (!t.alts.some((g) => g.notes.length)) throw new Error("音を拾えませんでした。もう一度試すか、意図の書き方を変えてください");
+    project.log[logIndex].proposed = Math.max(...t.alts.map((g) => g.proposed));
     commit();
-    setStatus(`提案が届きました。生の音 ${raw.length} 個から ${res.notes.length} 音に整理しました。4/4 説明を作っています…`);
-    ghost.explanation = await explainGhost(apiKey, project, target, ghost.notes, intent).catch(() => "（説明を取得できませんでした）");
-    renderGhostPanel();
-    setStatus(`提案 ${res.notes.length} 音。クリックで1音ずつ採用、右クリックで消去、Tab で全部採用`);
+    setStatus(`${t.alts.length}案が届きました。案を切り替えて聴き比べ（キー 1 / 2）、クリックで1音ずつ採用、Tab で全部採用`);
   } catch (e) {
     console.error(e);
     setStatus(String((e as Error).message ?? e), true);
@@ -155,6 +180,17 @@ askBtn.onclick = async () => {
     askBtn.disabled = false;
   }
 };
+
+const LABELS = ["A", "B", "C"];
+/** 案を切り替える。採用済みの音はそのまま残り、ゴーストだけが入れ替わる */
+function showAlt(id: TrackId, k: number) {
+  const t = project.tracks[id];
+  const g = t.alts?.[k];
+  if (!g) return;
+  t.ghost = g;
+  applyLyriaSlice(g);
+  commit();
+}
 
 /**
  * 耳コピの確からしさの目安。音量が大きく、ある程度長い音ほど誤検出が少ない。
@@ -205,8 +241,15 @@ function acceptAll() {
 function closeGhost(keepReason: boolean) {
   const t = project.tracks[roll.track];
   if (!t.ghost) return;
-  if (keepReason) project.log[t.ghost.logIndex].reason = $<HTMLTextAreaElement>("reason").value.trim();
+  const entry = project.log[t.ghost.logIndex];
+  const alts = t.alts ?? [t.ghost];
+  entry.chosen = alts.filter((g) => g.accepted > 0).map((g) => g.label).join("+");
+  const main = alts.reduce((a, b) => (b.accepted > a.accepted ? b : a));
+  entry.spec = main.spec;
+  if (keepReason) entry.reason = $<HTMLTextAreaElement>("reason").value.trim();
+  $<HTMLTextAreaElement>("reason").value = "";
   t.ghost = null;
+  t.alts = null;
   engine.setLyria(null);
   setStatus("");
   commit();
@@ -218,14 +261,20 @@ function renderSpec(spec: LyriaSpec) {
   <p>${esc(spec.rationale)}</p>`;
 }
 function renderGhostPanel() {
-  const g = project.tracks[roll.track].ghost;
+  const t = project.tracks[roll.track];
+  const g = t.ghost;
   const panel = $("ghost");
   panel.hidden = !g;
   if (!g) return;
+  const alts = t.alts ?? [g];
+  $("alts").innerHTML = alts.map((a, k) =>
+    `<button data-alt="${k}" aria-pressed="${a === g}"><b>案${a.label}</b> ${esc(a.spec.title ?? "")}${a.accepted ? ` <span class="badge">採用 ${a.accepted}</span>` : ""}</button>`,
+  ).join("") + (alts.length < 2 && askBtn.disabled ? `<span class="muted">案Bを準備中…</span>` : "");
+  for (const b of $("alts").querySelectorAll<HTMLButtonElement>("[data-alt]")) b.onclick = () => showAlt(t.id, Number(b.dataset.alt));
   renderSpec(g.spec);
   sens.value = String(Math.round((1 - g.ampRatio) * 100));
   const sure = g.conf.filter((c) => c > 0.6).length;
-  $("ghostSummary").textContent = `残り ${g.notes.length} 音（実線で描いた確からしい音 ${sure}、点線は誤検出の可能性あり）。採用 ${project.log[g.logIndex].accepted} 音`;
+  $("ghostSummary").textContent = `残り ${g.notes.length} 音（実線で描いた確からしい音 ${sure}、点線は誤検出の可能性あり）。この案から採用 ${g.accepted} 音`;
   $("explain").textContent = g.explanation || "説明を作っています…";
 }
 
@@ -233,7 +282,7 @@ function renderLog() {
   const box = $("log");
   if (!project.log.length) { box.innerHTML = `<p class="muted">まだ記録はありません。提案を受け取って「理由を残して閉じる」と、ここに残ります。</p>`; return; }
   box.innerHTML = [...project.log].reverse().map((e) => `<li><div><b>${e.track === "bass" ? "Bass" : "Lead"}</b> ・ ${new Date(e.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ・ 提案 ${e.proposed} 音中 ${e.accepted} 音を採用</div>
-  <div class="intent">意図: ${esc(e.intent)}</div>${e.reason ? `<div class="reason">理由: ${esc(e.reason)}</div>` : ""}</li>`).join("");
+  <div class="intent">意図: ${esc(e.intent)}</div>${e.titles ? `<div class="intent">比べた案: ${e.titles.map(esc).join(" ／ ")}${e.chosen ? `（採用: 案${esc(e.chosen)}）` : ""}</div>` : ""}${e.reason ? `<div class="reason">理由: ${esc(e.reason)}</div>` : ""}</li>`).join("");
 }
 
 const sens = $<HTMLInputElement>("sens");
@@ -248,6 +297,7 @@ document.addEventListener("keydown", (e) => {
   if ((e.target as HTMLElement).closest("input, textarea, select")) return;
   if (e.key === "Tab" && project.tracks[roll.track].ghost) { e.preventDefault(); acceptAll(); }
   else if (e.key === "Escape") closeGhost(false);
+  else if ((e.key === "1" || e.key === "2") && project.tracks[roll.track].alts) showAlt(roll.track, Number(e.key) - 1);
   else if (e.key === " ") { e.preventDefault(); playBtn.click(); }
 });
 
@@ -279,3 +329,7 @@ function commit() {
   renderAll();
 }
 renderAll();
+
+// ページを開いたら、空いた時間に耳コピのモデルを読み込んでおく
+const idle = (cb: () => void) => ("requestIdleCallback" in window ? requestIdleCallback(cb, { timeout: 3000 }) : setTimeout(cb, 1500));
+idle(() => void warmUp());

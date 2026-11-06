@@ -40,12 +40,13 @@
           <label>対象 <select id="target"><option value="lead">Lead</option><option value="bass">Bass</option></select></label>
           <textarea id="intent" rows="3" placeholder="例: ベースに寄り添う、少し切ないメロディ。最後の小節で上がって終わりたい"></textarea>
           <label class="check"><input id="monitor" type="checkbox" checked /> 生成中の音をそのまま聴く</label>
-          <button id="ask" class="primary wide">Lyria に弾いてもらう</button>
+          <button id="ask" class="primary wide">Lyria に2案弾いてもらう</button>
           <p id="status" class="status" aria-live="polite"></p>
         </section>
 
         <section id="ghost" class="card" hidden>
           <h2>提案</h2>
+          <div id="alts" class="alts" role="group" aria-label="案の切り替え"></div>
           <div id="spec" class="spec"></div>
           <p id="ghostSummary" class="muted"></p>
           <label class="slider">拾う音の量 <span class="muted">少なく</span><input id="sens" type="range" min="20" max="90" value="65" /><span class="muted">多く</span></label>

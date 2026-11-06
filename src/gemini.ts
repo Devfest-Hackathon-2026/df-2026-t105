@@ -22,8 +22,28 @@ async function callJson<T>(apiKey: string, prompt: string, schema: object): Prom
   return JSON.parse(text) as T;
 }
 
-/** 「こうしたい」という言葉と今の曲の中身から、Lyria に渡すプロンプトと設定を作る */
-export async function intentToSpec(apiKey: string, p: Project, target: TrackId, intent: string): Promise<LyriaSpec> {
+const SPEC_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    title: { type: "STRING" },
+    prompts: {
+      type: "ARRAY",
+      items: { type: "OBJECT", properties: { text: { type: "STRING" }, weight: { type: "NUMBER" } }, required: ["text", "weight"] },
+    },
+    density: { type: "NUMBER" },
+    brightness: { type: "NUMBER" },
+    guidance: { type: "NUMBER" },
+    rationale: { type: "STRING" },
+  },
+  required: ["title", "prompts", "density", "brightness", "guidance", "rationale"],
+};
+
+/**
+ * 「こうしたい」という言葉と今の曲の中身から、Lyria に渡す指示を2案作る。
+ * 2案は、意図の解釈が違うもの（例: 音域を上げて目立たせる案と、音数を減らして寄り添う案）にする。
+ * 同じ意図でも解釈が複数あることを利用者に見せ、どちらを採るかを利用者に決めてもらうため。
+ */
+export async function intentToSpecs(apiKey: string, p: Project, target: TrackId, intent: string): Promise<LyriaSpec[]> {
   const role = target === "bass" ? "bassline" : "lead melody";
   const prompt = `You help a beginner music producer. They are writing a ${p.bars}-bar loop at ${p.bpm} BPM in ${p.root} major / its relative minor.
 Current tracks (MIDI, 16th-note steps):
@@ -31,27 +51,23 @@ ${(["drums", "bass", "lead"] as TrackId[]).map((id) => "- " + describeTrack(p, i
 
 They want a suggestion for the ${role}. Their intent (may be Japanese): """${intent}"""
 
-Lyria RealTime will generate audio for ONLY this part, which will then be transcribed to MIDI. So:
-- The audio will be transcribed to MIDI, so pick ONE instrument from this list (they transcribe reliably): ${target === "bass" ? '"synth bass", "electric bass (fingered)", "upright bass"' : '"square-wave synth lead", "flute", "clarinet", "whistling", "ocarina", "marimba"'}. Never guitar, piano, strings, pads or choirs.
+Lyria RealTime will generate audio for ONLY this part, which will then be transcribed to MIDI.
+Return exactly TWO candidates that interpret the intent differently (e.g. different register, rhythm density, or contour), so the user can compare and choose.
+For each candidate:
+- Pick ONE instrument from this list (they transcribe reliably): ${target === "bass" ? '"synth bass", "electric bass (fingered)", "upright bass"' : '"square-wave synth lead", "flute", "clarinet", "whistling", "ocarina", "marimba"'}. Never guitar, piano, strings, pads or choirs. The two candidates may use different instruments.
 - Always include the words "solo", "monophonic", "dry" in the first prompt. No chords, no reverb.
 - Describe the musical character that serves the intent and fits the other tracks (rhythm, register, contour, energy).
 - 1 to 3 weighted prompts, short English phrases.
 - density 0..1 (how busy), brightness 0..1, guidance 3..5.
-- rationale: 2-3 sentences in Japanese explaining WHY these choices match the intent and the existing tracks, written for a beginner.`;
-  return callJson<LyriaSpec>(apiKey, prompt, {
+- title: a short Japanese label (max 16 chars) that names the interpretation, e.g. "高音で歌い上げる".
+- rationale: 2 sentences in Japanese explaining how this candidate interprets the intent and what trade-off it makes compared to the other candidate, written for a beginner.`;
+  const r = await callJson<{ candidates: LyriaSpec[] }>(apiKey, prompt, {
     type: "OBJECT",
-    properties: {
-      prompts: {
-        type: "ARRAY",
-        items: { type: "OBJECT", properties: { text: { type: "STRING" }, weight: { type: "NUMBER" } }, required: ["text", "weight"] },
-      },
-      density: { type: "NUMBER" },
-      brightness: { type: "NUMBER" },
-      guidance: { type: "NUMBER" },
-      rationale: { type: "STRING" },
-    },
-    required: ["prompts", "density", "brightness", "guidance", "rationale"],
+    properties: { candidates: { type: "ARRAY", items: SPEC_SCHEMA } },
+    required: ["candidates"],
   });
+  if (!r.candidates?.length) throw new Error("Gemini が候補を返しませんでした");
+  return r.candidates.slice(0, 2);
 }
 
 /** 採用候補のゴーストノートについて、どんなフレーズなのかを初心者向けに説明する */

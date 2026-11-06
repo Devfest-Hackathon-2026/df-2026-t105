@@ -14,9 +14,23 @@ export type Ghost = {
   intent: string;
   explanation: string;
   logIndex: number;
+  /** 2案のうちどちらか */
+  label: string;
+  proposed: number;
+  accepted: number;
 };
-export type Track = { id: TrackId; name: string; notes: Note[]; mute: boolean; ghost: Ghost | null };
+export type Track = {
+  id: TrackId;
+  name: string;
+  notes: Note[];
+  mute: boolean;
+  /** いま表示しているゴースト（alts のどれか） */
+  ghost: Ghost | null;
+  /** 同じ依頼から作った候補（案A、案B） */
+  alts?: Ghost[] | null;
+};
 export type LyriaSpec = {
+  title?: string;
   prompts: { text: string; weight: number }[];
   density: number;
   brightness: number;
@@ -31,6 +45,10 @@ export type LogEntry = {
   proposed: number;
   accepted: number;
   reason: string;
+  /** どの案から採用したか（"A"、"B"、"A+B"、採用なしなら空） */
+  chosen?: string;
+  /** 比べた案の名前 */
+  titles?: string[];
 };
 export type Project = {
   bpm: number;
@@ -88,7 +106,7 @@ export function save(p: Project) {
     const plain = {
       ...p,
       tracks: Object.fromEntries(
-        Object.entries(p.tracks).map(([k, t]) => [k, { ...t, ghost: null }]),
+        Object.entries(p.tracks).map(([k, t]) => [k, { ...t, ghost: null, alts: null }]),
       ),
     };
     localStorage.setItem(KEY, JSON.stringify(plain));

@@ -33,6 +33,13 @@ while (Date.now() < deadline) {
 }
 await page.screenshot({ path: `${outDir}/1-ghost.png` });
 await page.screenshot({ path: `${outDir}/1b-ghost-full.png`, fullPage: true });
+// 案B に切り替えて見る
+if (await page.locator('[data-alt="1"]').count()) {
+  await page.click('[data-alt="1"]');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${outDir}/1c-alt-b.png`, fullPage: true });
+  console.log("alts:", (await page.textContent("#alts"))?.replace(/\s+/g, " "));
+}
 // 拾う音の量を減らす → 全部採用 → 理由を残して閉じる
 await page.locator("#sens").fill("35");
 console.log("after slider:", await page.textContent("#ghostSummary"));

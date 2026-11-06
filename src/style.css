@@ -138,3 +138,6 @@ main {
   .key input { width: 130px; }
 }
 .slider { color: var(--text); } .slider input { flex: 1; }
+.alts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.alts button { text-align: left; }
+.alts button[aria-pressed="true"] .badge { color: inherit; border-color: currentColor; }
