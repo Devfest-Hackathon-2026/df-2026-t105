@@ -1,0 +1,9 @@
+{"name":"l35plain_flute_A100","sourceBpm":100,"transpose":-5,"startSec":26.446,"notes":30,"chroma":0.854,"chromaShift":0.482,"onsetF1":0.358,"onsetF1Random":0.281}
+{"name":"l35ts_flute_A100","sourceBpm":100,"transpose":0,"startSec":40.807,"notes":37,"chroma":0.737,"chromaShift":0.477,"onsetF1":0.571,"onsetF1Random":0.424}
+{"name":"clip_flute_A100","sourceBpm":100,"transpose":2,"startSec":9.71,"notes":21,"chroma":0.907,"chromaShift":0.653,"onsetF1":0.4,"onsetF1Random":0.278}
+{"name":"l35plain_ocarina_D110","sourceBpm":110,"transpose":5,"startSec":37.103,"notes":25,"chroma":0.834,"chromaShift":0.387,"onsetF1":0.625,"onsetF1Random":0.391}
+{"name":"l35ts_ocarina_D110","sourceBpm":110,"transpose":5,"startSec":2.294,"notes":20,"chroma":0.869,"chromaShift":0.433,"onsetF1":0.51,"onsetF1Random":0.265}
+{"name":"clip_ocarina_D110","sourceBpm":110,"transpose":0,"startSec":6.663,"notes":25,"chroma":0.713,"chromaShift":0.492,"onsetF1":0.857,"onsetF1Random":0.414}
+{"name":"l35plain_bass_G120","sourceBpm":108.6,"transpose":0,"startSec":35.441,"notes":23,"chroma":0.848,"chromaShift":0.751,"onsetF1":0.5,"onsetF1Random":0.355}
+{"name":"l35ts_bass_G120","sourceBpm":120,"transpose":2,"startSec":32.04,"notes":40,"chroma":0.873,"chromaShift":0.777,"onsetF1":0.553,"onsetF1Random":0.499}
+{"name":"clip_bass_G120","sourceBpm":120,"transpose":2,"startSec":18.103,"notes":16,"chroma":0.919,"chromaShift":0.615,"onsetF1":0.938,"onsetF1Random":0.206}
