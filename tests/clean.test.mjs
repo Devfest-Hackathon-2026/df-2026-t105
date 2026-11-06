@@ -47,3 +47,22 @@ test("スケール外の音は近いスケール音に寄せる", () => {
   const r = cleanToGhost(raw, { bpm: 120, root: "C", role: "lead", bars: 4, sourceBpm: 120 });
   for (const n of r.notes) assert.ok([0, 2].includes(n.pitch % 12), `C# が ${n.pitch} になった`);
 });
+
+test("キー推定: A マイナーの音階とアルペジオは、相対長調の C（root 0）と推定する", async () => {
+  const { estimateKey } = await import("../src/core/clean.js");
+  const am = [57, 60, 64, 69, 72, 64, 60, 57, 59, 62, 65, 64, 60, 57];
+  const k = estimateKey(am.map((p, i) => ({ pitchMidi: p, durationSeconds: i % 4 === 0 ? 0.6 : 0.3, amplitude: 0.8 })));
+  assert.equal(k.root, 0);
+});
+
+test("conform: D メジャーで弾かれたフレーズを C メジャーの曲に合わせると、2半音下がる", async () => {
+  const { cleanToGhost } = await import("../src/core/clean.js");
+  const step = 60 / 120 / 4;
+  const dmaj = [62, 64, 66, 67, 69, 71, 73, 74, 69, 66, 62, 66, 69, 74, 69, 66];
+  const raw = Array.from({ length: 48 }, (_, i) => ({
+    startTimeSeconds: 2.5 + i * 2 * step, durationSeconds: step * 1.8, pitchMidi: dmaj[i % dmaj.length], amplitude: 0.8,
+  }));
+  const r = cleanToGhost(raw, { bpm: 120, root: "C", role: "lead", bars: 4, conform: true });
+  assert.equal(r.transpose, -2);
+  for (const n of r.notes) assert.ok([0, 2, 4, 5, 7, 9, 11].includes(n.pitch % 12), `スケール外の音 ${n.pitch}`);
+});

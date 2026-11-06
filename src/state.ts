@@ -9,6 +9,12 @@ export type Ghost = {
   startSec: number;
   /** Lyria が実際に演奏したテンポの推定値（指定した BPM から数%ずれることがある） */
   sourceBpm: number;
+  /** 曲のキーに合わせるために移調した半音数（非リアルタイムのモデルのとき） */
+  transpose?: number;
+  /** 演奏から推定したキー（表示用） */
+  detectedKey?: string;
+  /** 生成に使ったモデル */
+  model?: string;
   /** basic-pitch の生の出力。整形の強さを変えて作り直すときに使う */
   raw: { startTimeSeconds: number; durationSeconds: number; pitchMidi: number; amplitude: number }[];
   /** ドラムのとき、検出をやり直すための 22.05kHz モノラル音声 */
@@ -28,6 +34,12 @@ export type Track = {
   name: string;
   notes: Note[];
   mute: boolean;
+  /** ソロ。どれかのトラックがソロなら、ソロのトラックだけを鳴らす */
+  solo?: boolean;
+  /** 音量（dB、0 が基準） */
+  volume?: number;
+  /** 音色（audio.ts の PRESETS の id） */
+  preset?: string;
   /** いま表示しているゴースト（alts のどれか） */
   ghost: Ghost | null;
   /** 同じ依頼から作った候補（案A、案B） */
@@ -53,6 +65,8 @@ export type LogEntry = {
   chosen?: string;
   /** 比べた案の名前 */
   titles?: string[];
+  /** 生成に使った Lyria のモデル */
+  model?: string;
 };
 export type Project = {
   bpm: number;

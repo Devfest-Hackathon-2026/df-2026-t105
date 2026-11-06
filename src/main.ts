@@ -1,9 +1,10 @@
 import "./style.css";
-import { Engine } from "./audio";
-import { cleanToGhost, NOTE_NAMES } from "./core/clean.js";
+import { Engine, PRESETS, renderMix } from "./audio";
+import { downloadBytes, encodeWav } from "./wav";
+import { cleanToGhost, estimateKey, NOTE_NAMES } from "./core/clean.js";
 import { downloadMidi, toMidiFile } from "./core/midi.js";
 import { explainGhost, intentToSpecs } from "./gemini";
-import { generate, slice } from "./lyria";
+import { buildClipPrompt, generate, generateClip, slice, type ClipModel } from "./lyria";
 import { Roll } from "./roll";
 import { demoProject, load, save, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
 import { toMono22k, transcribe, warmUp } from "./transcribe";
@@ -92,9 +93,21 @@ function renderTracks() {
     const row = document.createElement("div");
     row.className = "track" + (roll.track === t.id ? " selected" : "");
     const g = t.ghost ? `<span class="badge">ゴースト ${t.ghost.notes.length}</span>` : "";
-    row.innerHTML = `<button class="track-name">${t.name}</button>${g}<span class="count">${t.notes.length}音</span><button class="mute" aria-pressed="${t.mute}" title="ミュート">M</button>`;
+    const presets = t.id === "drums" ? null : PRESETS[t.id];
+    const presetSel = presets
+      ? `<select class="preset" aria-label="${t.name} の音色">${presets.map((p) => `<option value="${p.id}" ${p.id === (t.preset ?? presets[0].id) ? "selected" : ""}>${p.name}</option>`).join("")}</select>`
+      : "";
+    row.innerHTML = `<button class="track-name">${t.name}</button>${g}<span class="count">${t.notes.length}音</span>${presetSel}
+      <input class="vol" type="range" min="-24" max="6" step="1" value="${t.volume ?? 0}" aria-label="${t.name} の音量" title="音量 ${t.volume ?? 0} dB" />
+      <button class="solo" aria-pressed="${!!t.solo}" title="ソロ">S</button><button class="mute" aria-pressed="${t.mute}" title="ミュート">M</button>`;
     row.querySelector<HTMLButtonElement>(".track-name")!.onclick = () => { roll.track = t.id; targetSel.value = t.id; renderAll(); };
     row.querySelector<HTMLButtonElement>(".mute")!.onclick = () => { t.mute = !t.mute; commit(); };
+    row.querySelector<HTMLButtonElement>(".solo")!.onclick = () => { t.solo = !t.solo; commit(); };
+    const vol = row.querySelector<HTMLInputElement>(".vol")!;
+    vol.oninput = () => { t.volume = Number(vol.value); vol.title = `音量 ${t.volume} dB`; engine.applyTrackSettings(); };
+    vol.onchange = () => commit();
+    const ps = row.querySelector<HTMLSelectElement>(".preset");
+    if (ps) ps.onchange = () => { t.preset = ps.value; commit(); };
     box.appendChild(row);
   }
 }
@@ -142,6 +155,28 @@ const intentInput = $<HTMLTextAreaElement>("intent");
 const askBtn = $<HTMLButtonElement>("ask");
 const statusEl = $("status");
 const monitorChk = $<HTMLInputElement>("monitor");
+const modelSel = $<HTMLSelectElement>("model");
+const MODEL_KEY = "ghostnotes.model";
+modelSel.value = safeGet(MODEL_KEY) ?? "lyria-3.5";
+const MODEL_HINTS: Record<string, string> = {
+  "lyria-3.5": "最上位のモデル。テンポとキーは指定どおりにならないことがあるので、耳コピのあとで曲に合わせて移調・テンポ合わせをする。約2分かかる",
+  "lyria-3-clip-preview": "30秒までの短い曲を作るモデル。3.5 よりテンポとキーを守りやすい",
+  realtime: "テンポとキーを設定値で指定でき、指定どおりに演奏する。音質は 3.5 に劣る。約50秒",
+};
+const showModelHint = () => { $("modelHint").textContent = MODEL_HINTS[modelSel.value] ?? ""; };
+showModelHint();
+modelSel.onchange = () => { safeSet(MODEL_KEY, modelSel.value); showModelHint(); };
+
+/** 曲のキーを、ベースとリードの音から「A minor」のような名前にする（Lyria 3.5 へのプロンプト用） */
+function projectKeyName(): string {
+  const notes = [...project.tracks.bass.notes, ...project.tracks.lead.notes];
+  const root = NOTE_NAMES.indexOf(project.root);
+  if (notes.length < 4) return `${project.root} major`;
+  const k = estimateKey(notes);
+  // 推定した相対長調が曲の設定と違うときは、設定のほうを信じて長調として伝える
+  if (k.root !== root) return `${project.root} major`;
+  return k.mode === "minor" ? `${NOTE_NAMES[k.tonic]} minor` : `${project.root} major`;
+}
 
 type Target = "lead" | "bass" | "drums";
 const FALLBACK = (target: Target): LyriaSpec[] =>
@@ -173,21 +208,37 @@ askBtn.onclick = async () => {
     }
     const barSec = (60 / project.bpm) * 4;
     const seconds = 2 + barSec * (project.bars + 1);
-    const prog = specs.map(() => 0);
-    const showProg = () => setStatus(`2/4 Lyria が${specs.length}案を同時に演奏しています… ${Math.min(...prog).toFixed(0)} / ${seconds.toFixed(0)} 秒`);
-    showProg();
-    // 2案を同時に生成する。生成中の試聴は案Aだけ鳴らす
-    const fulls = await Promise.all(specs.map((spec, k) =>
-      generate(apiKey, {
-        role: target, spec, bpm: project.bpm, root: project.root, seconds,
-        ctx: engine.context, monitor: monitorChk.checked && k === 0,
-        onProgress: (sec) => { prog[k] = sec; showProg(); },
-      }),
-    ));
+    // ドラムの検出は曲のテンポで格子に合わせる前提なので、テンポを守る RealTime を使う
+    const model = target === "drums" ? "realtime" : modelSel.value;
+    let fulls: AudioBuffer[];
+    if (model === "realtime") {
+      const prog = specs.map(() => 0);
+      const showProg = () => setStatus(`2/4 Lyria RealTime が${specs.length}案を同時に演奏しています… ${Math.min(...prog).toFixed(0)} / ${seconds.toFixed(0)} 秒`);
+      showProg();
+      // 2案を同時に生成する。生成中の試聴は案Aだけ鳴らす
+      fulls = await Promise.all(specs.map((spec, k) =>
+        generate(apiKey, {
+          role: target, spec, bpm: project.bpm, root: project.root, seconds,
+          ctx: engine.context, monitor: monitorChk.checked && k === 0,
+          onProgress: (sec) => { prog[k] = sec; showProg(); },
+        }),
+      ));
+    } else {
+      const label = model === "lyria-3.5" ? "Lyria 3.5" : "Lyria 3 Clip";
+      setStatus(`2/4 ${label} が${specs.length}案を作曲しています（20秒ほどかかります）`);
+      const keyName = projectKeyName();
+      const clipSec = Math.ceil(seconds + barSec * 2);
+      const res = await Promise.all(specs.map((spec) =>
+        generateClip(apiKey, { model: model as ClipModel, ctx: engine.context, prompt: buildClipPrompt(spec, { bpm: project.bpm, keyName, role: target, seconds: clipSec }) }),
+      ));
+      fulls = res.map((r) => r.buffer);
+      if (res.some((r) => /\[[^\]]*\]\s*[^\[\s]/.test(r.text.replace(/\[\[[^\]]*\]\]/g, "")))) console.warn("歌詞らしきテキストが返った:", res.map((r) => r.text));
+    }
 
     project.log.push({
       at: new Date().toISOString(), track: target, intent, spec: specs[0], proposed: 0, accepted: 0, reason: "",
       titles: specs.map((sp, k) => `${LABELS[k]}: ${sp.title ?? ""}`),
+      model: model === "realtime" ? "Lyria RealTime" : model === "lyria-3.5" ? "Lyria 3.5" : "Lyria 3 Clip",
     });
     const logIndex = project.log.length - 1;
     const t = project.tracks[target];
@@ -199,8 +250,11 @@ askBtn.onclick = async () => {
       if (target === "drums") {
         g = await makeDrumGhost(intent, specs[k], fulls[k], logIndex, k);
       } else {
-        const raw = await transcribe(fulls[k], (p) => setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch） ${Math.round(p * 100)}%`));
-        g = makeGhost(target, intent, specs[k], fulls[k], raw, logIndex, k);
+        // 非リアルタイムのモデルは1分ほどの曲を返すので、耳コピは先頭の約35秒だけにする（時間を抑えるため）
+        const src = model === "realtime" ? fulls[k] : slice(engine.context, fulls[k], 0, Math.min(fulls[k].duration, 35));
+        const raw = await transcribe(src, (p) => setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch） ${Math.round(p * 100)}%`));
+        g = makeGhost(target, intent, specs[k], fulls[k], raw, logIndex, k, undefined, model !== "realtime");
+        g.model = model;
       }
       t.alts.push(g);
       // 最初の案ができた時点で見せる（2案目の耳コピを待たせない）
@@ -258,11 +312,14 @@ function redetectDrums(g: Ghost, sensitivity: number) {
 /** 耳コピの生の結果からゴーストを作る。startSec と sourceBpm を渡すと、推定をやり直さずにその値を使う */
 function makeGhost(
   target: "lead" | "bass", intent: string, spec: LyriaSpec, full: AudioBuffer, raw: Ghost["raw"], logIndex: number, k: number,
-  fixed?: { startSec: number; sourceBpm: number },
+  fixed?: { startSec: number; sourceBpm: number; transpose?: number },
+  conform = false,
 ): Ghost {
-  const res = cleanToGhost(raw, { bpm: project.bpm, root: project.root, role: target, bars: project.bars, ...(fixed ?? {}) });
+  const res = cleanToGhost(raw, { bpm: project.bpm, root: project.root, role: target, bars: project.bars, conform, ...(fixed ?? {}) });
+  const dk = res.detectedKey as { tonic: number; mode: string } | null;
   return {
     notes: res.notes, conf: confidence(res.notes, project.bars * 16), full, startSec: res.startSec, sourceBpm: res.sourceBpm, raw, ampRatio: 0.35,
+    transpose: res.transpose, detectedKey: dk ? `${NOTE_NAMES[dk.tonic]} ${dk.mode === "minor" ? "マイナー" : "メジャー"}` : undefined,
     spec, intent, explanation: "", logIndex, label: LABELS[k], proposed: res.notes.length, accepted: 0,
   };
 }
@@ -327,15 +384,7 @@ if (params.has("debug")) {
   };
 }
 function wavBase64(buf: AudioBuffer): string {
-  const n = buf.length, ch = buf.numberOfChannels, sr = buf.sampleRate;
-  const out = new DataView(new ArrayBuffer(44 + n * ch * 2));
-  const w = (o: number, str: string) => { for (let i = 0; i < str.length; i++) out.setUint8(o + i, str.charCodeAt(i)); };
-  w(0, "RIFF"); out.setUint32(4, 36 + n * ch * 2, true); w(8, "WAVE"); w(12, "fmt ");
-  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, ch, true); out.setUint32(24, sr, true);
-  out.setUint32(28, sr * ch * 2, true); out.setUint16(32, ch * 2, true); out.setUint16(34, 16, true); w(36, "data"); out.setUint32(40, n * ch * 2, true);
-  const data = Array.from({ length: ch }, (_, c) => buf.getChannelData(c));
-  for (let i = 0, o = 44; i < n; i++) for (let c = 0; c < ch; c++, o += 2) out.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(data[c][i] * 32767))), true);
-  const bytes = new Uint8Array(out.buffer);
+  const bytes = encodeWav(buf);
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
@@ -365,7 +414,7 @@ function confidence(notes: Note[], steps: number): number[] {
 /** Lyria の原音から、ゴーストと同じ4小節を切り出す。演奏のテンポが曲とずれていれば再生速度で合わせる */
 function applyLyriaSlice(g: Ghost) {
   const sec = (60 / g.sourceBpm) * 4 * project.bars;
-  engine.setLyria(slice(engine.context, g.full, g.startSec, sec), project.bpm / g.sourceBpm);
+  engine.setLyria(slice(engine.context, g.full, g.startSec, sec), project.bpm / g.sourceBpm, g.transpose ?? 0);
 }
 
 function nudge(d: number) {
@@ -392,7 +441,7 @@ function reclean(ampRatio: number) {
     return;
   }
   g.ampRatio = ampRatio;
-  const res = cleanToGhost(g.raw, { bpm: project.bpm, root: project.root, role: id, bars: project.bars, startSec: g.startSec, sourceBpm: g.sourceBpm, ampRatio });
+  const res = cleanToGhost(g.raw, { bpm: project.bpm, root: project.root, role: id, bars: project.bars, startSec: g.startSec, sourceBpm: g.sourceBpm, transpose: g.transpose ?? 0, ampRatio });
   g.notes = res.notes;
   g.conf = confidence(g.notes, project.bars * 16);
   commit();
@@ -454,6 +503,10 @@ function renderGhostPanel() {
   ).join("") + (alts.length < 2 && askBtn.disabled ? `<span class="muted">案Bを準備中…</span>` : "");
   for (const b of $("alts").querySelectorAll<HTMLButtonElement>("[data-alt]")) b.onclick = () => showAlt(t.id, Number(b.dataset.alt));
   renderSpec(g.spec);
+  if (g.model && g.model !== "realtime") {
+    const tp = g.transpose ?? 0;
+    $("spec").insertAdjacentHTML("beforeend", `<div class="params">演奏は ${g.sourceBpm.toFixed(1)} BPM・${esc(g.detectedKey ?? "キー不明")}。${tp ? `曲のキーに合わせて ${tp > 0 ? "+" : ""}${tp} 半音移調し、` : ""}テンポを曲に揃えました</div>`);
+  }
   sens.value = String(Math.round((t.id === "drums" ? g.ampRatio : 1 - g.ampRatio) * 100));
   const sure = g.conf.filter((c) => c > 0.6).length;
   $("ghostSummary").textContent = `残り ${g.notes.length} 音（実線で描いた確からしい音 ${sure}、点線は誤検出の可能性あり）。この案から採用 ${g.accepted} 音`;
@@ -464,7 +517,7 @@ function renderLog() {
   const box = $("log");
   if (!project.log.length) { box.innerHTML = `<p class="muted">まだ記録はありません。提案を受け取って「理由を残して閉じる」と、ここに残ります。</p>`; return; }
   box.innerHTML = [...project.log].reverse().map((e) => `<li><div><b>${project.tracks[e.track]?.name ?? e.track}</b> ・ ${new Date(e.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ・ 提案 ${e.proposed} 音中 ${e.accepted} 音を採用</div>
-  <div class="intent">意図: ${esc(e.intent)}</div>${e.titles ? `<div class="intent">比べた案: ${e.titles.map(esc).join(" ／ ")}${e.chosen ? `（採用: 案${esc(e.chosen)}）` : ""}</div>` : ""}${e.reason ? `<div class="reason">理由: ${esc(e.reason)}</div>` : ""}</li>`).join("");
+  <div class="intent">意図: ${esc(e.intent)}${e.model ? `（${esc(e.model)}）` : ""}</div>${e.titles ? `<div class="intent">比べた案: ${e.titles.map(esc).join(" ／ ")}${e.chosen ? `（採用: 案${esc(e.chosen)}）` : ""}</div>` : ""}${e.reason ? `<div class="reason">理由: ${esc(e.reason)}</div>` : ""}</li>`).join("");
 }
 
 const sens = $<HTMLInputElement>("sens");
@@ -477,6 +530,9 @@ $("close").onclick = () => closeGhost(true);
 
 document.addEventListener("keydown", (e) => {
   if ((e.target as HTMLElement).closest("input, textarea, select")) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+  if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
   if (e.key === "Tab" && project.tracks[roll.track].ghost) { e.preventDefault(); acceptAll(); }
   else if (e.key === "Escape") closeGhost(false);
   else if ((e.key === "1" || e.key === "2") && project.tracks[roll.track].alts) showAlt(roll.track, Number(e.key) - 1);
@@ -508,9 +564,69 @@ function renderAll() {
   roll.draw();
 }
 function commit() {
+  recordHistory();
   save(project);
+  engine.applyTrackSettings();
   renderAll();
 }
+
+// ---------- 元に戻す／やり直す ----------
+// 記録するのは曲の中身（ノート、テンポ、キー、音色、音量など）。ゴーストと判断の記録は対象にしない
+const history: string[] = [];
+let historyIndex = -1;
+function snapshot(): string {
+  return JSON.stringify({
+    bpm: project.bpm, root: project.root, bars: project.bars,
+    tracks: Object.fromEntries(Object.values(project.tracks).map((t) => [t.id, { notes: t.notes, mute: t.mute, solo: t.solo, volume: t.volume, preset: t.preset }])),
+  });
+}
+function recordHistory() {
+  const s = snapshot();
+  if (history[historyIndex] === s) return;
+  history.splice(historyIndex + 1);
+  history.push(s);
+  if (history.length > 200) history.shift();
+  historyIndex = history.length - 1;
+  renderHistoryButtons();
+}
+function restore(s: string) {
+  const o = JSON.parse(s);
+  project.bpm = o.bpm; project.root = o.root; project.bars = o.bars;
+  for (const [id, t] of Object.entries(o.tracks) as [TrackId, Partial<typeof project.tracks.lead>][]) Object.assign(project.tracks[id], t);
+  bpmInput.value = String(project.bpm);
+  keySel.value = project.root;
+  engine.setBpm(project.bpm);
+  save(project);
+  engine.applyTrackSettings();
+  renderAll();
+  renderHistoryButtons();
+}
+function undo() { if (historyIndex > 0) restore(history[--historyIndex]); }
+function redo() { if (historyIndex < history.length - 1) restore(history[++historyIndex]); }
+function renderHistoryButtons() {
+  $<HTMLButtonElement>("undo").disabled = historyIndex <= 0;
+  $<HTMLButtonElement>("redo").disabled = historyIndex >= history.length - 1;
+}
+$("undo").onclick = undo;
+$("redo").onclick = redo;
+
+$("exportWav").onclick = async () => {
+  const btn = $<HTMLButtonElement>("exportWav");
+  btn.disabled = true;
+  setStatus("採用済みの音を WAV に書き出しています（2ループ）");
+  try {
+    const buf = await renderMix(project, 2);
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    downloadBytes(encodeWav(buf), `ghostnotes-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.wav`, "audio/wav");
+    setStatus(`WAV に書き出しました（${buf.duration.toFixed(1)} 秒、ゴーストは含みません）`);
+  } catch (e) {
+    setStatus(`WAV に書き出せませんでした: ${(e as Error).message}`, true);
+  } finally {
+    btn.disabled = false;
+  }
+};
+recordHistory();
 renderAll();
 
 // ページを開いたら、空いた時間に耳コピのモデルを読み込んでおく

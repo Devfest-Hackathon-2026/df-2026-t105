@@ -16,7 +16,7 @@ if (!KEY) {
   process.exit(1);
 }
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
-const ALLOWED_MODELS = new Set(["gemini-flash-latest", "gemini-3.5-flash-lite"]);
+const ALLOWED_MODELS = new Set(["gemini-flash-latest", "gemini-3.5-flash-lite", "lyria-3.5", "lyria-3-clip-preview"]);
 const MAX_MUSIC_SEC = 60;
 
 // IP ごとの簡易な回数制限（Cloud Run のインスタンス内だけで数える）

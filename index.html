@@ -20,7 +20,12 @@
           <button data-mode="B" title="ゴーストを MIDI で重ねる">B ゴースト</button>
           <button data-mode="L" title="Lyria の原音を重ねる">L 原音</button>
         </div>
+        <div class="seg" role="group" aria-label="編集の履歴">
+          <button id="undo" title="元に戻す（Cmd/Ctrl+Z）">↶ 戻す</button>
+          <button id="redo" title="やり直す（Shift+Cmd+Z / Ctrl+Y）">↷ やり直す</button>
+        </div>
         <button id="exportMidi" title="採用済みの音を .mid ファイルにして、手元の DAW で続きを作れるようにする">MIDI に書き出す</button>
+        <button id="exportWav" title="採用済みの音を 2 ループぶん .wav にする">WAV に書き出す</button>
         <button id="reset" class="ghost-btn">デモ曲に戻す</button>
         <label class="key">API キー <input id="apiKey" type="password" placeholder="空なら中継サーバー経由" autocomplete="off" /></label>
       </div>
@@ -41,7 +46,16 @@
           <h2>どうしたいか</h2>
           <label>対象 <select id="target"><option value="lead">Lead</option><option value="bass">Bass</option><option value="drums">Drums（試験的）</option></select></label>
           <textarea id="intent" rows="3" placeholder="例: ベースに寄り添う、少し切ないメロディ。最後の小節で上がって終わりたい"></textarea>
-          <label class="check"><input id="monitor" type="checkbox" checked /> 生成中の音をそのまま聴く</label>
+          <div class="field">
+            <label for="model">Lyria のモデル</label>
+            <select id="model">
+              <option value="lyria-3.5">Lyria 3.5（音質重視）</option>
+              <option value="lyria-3-clip-preview">Lyria 3 Clip（短い曲）</option>
+              <option value="realtime">Lyria RealTime（テンポ・キー厳守）</option>
+            </select>
+            <p id="modelHint" class="hint"></p>
+          </div>
+          <label class="check"><input id="monitor" type="checkbox" checked /> 生成中の音をそのまま聴く（RealTime のみ）</label>
           <button id="ask" class="primary wide">Lyria に2案弾いてもらう</button>
           <button id="demoBtn" class="wide" hidden>事前に生成した2案を出す（実演用）</button>
           <p id="status" class="status" aria-live="polite"></p>

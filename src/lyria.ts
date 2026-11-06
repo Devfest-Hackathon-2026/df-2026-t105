@@ -126,3 +126,49 @@ export function slice(ctx: BaseAudioContext, buf: AudioBuffer, startSec: number,
   }
   return out;
 }
+
+// ---------- 非リアルタイムのモデル（Lyria 3.5 / 3 Clip） ----------
+// RealTime より音が良いが、BPM とキーは設定値で渡せず、プロンプトの文章で伝えるしかない。
+// 実測ではテンポとキーを守らないことがあるので、耳コピのあとで曲のテンポとキーに合わせる（clean.js の conform）。
+
+export type ClipModel = "lyria-3.5" | "lyria-3-clip-preview";
+
+export function buildClipPrompt(spec: LyriaSpec, o: { bpm: number; keyName: string; role: "lead" | "bass" | "drums"; seconds: number }): string {
+  const body = spec.prompts.map((p) => p.text).join(", ");
+  const parts = o.role === "drums" ? "drum kit only, no melody, no bass" : "no drums, no chords, no other instruments";
+  const key = o.role === "drums" ? "" : `, key of ${o.keyName}`;
+  return `[0:00 - 0:${String(o.seconds).padStart(2, "0")}] A short loop: ${body}. ${parts}. Strict steady tempo of ${o.bpm} BPM in 4/4${key}. Instrumental only, no vocals, no singing. The track ends at 0:${String(o.seconds).padStart(2, "0")}.`;
+}
+
+/** generateContent で生成し、音声を AudioBuffer にして返す。音声が返らないことがあるので3回まで試す */
+export async function generateClip(
+  apiKey: string,
+  o: { model: ClipModel; prompt: string; ctx: AudioContext },
+): Promise<{ buffer: AudioBuffer; text: string }> {
+  const url = apiKey
+    ? `https://generativelanguage.googleapis.com/v1beta/models/${o.model}:generateContent`
+    : `${location.origin}/api/gemini/${o.model}`;
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(apiKey ? { "x-goog-api-key": apiKey } : {}) },
+      body: JSON.stringify({ contents: [{ parts: [{ text: o.prompt }] }], generationConfig: { responseModalities: ["AUDIO", "TEXT"] } }),
+    });
+    if (!r.ok) {
+      lastErr = `${o.model} ${r.status}: ${(await r.text()).slice(0, 200)}`;
+      if (r.status === 402 || r.status === 400 || r.status === 403) break;
+      continue;
+    }
+    const j = await r.json();
+    const parts: { text?: string; inlineData?: { data: string; mimeType: string } }[] = j.candidates?.[0]?.content?.parts ?? [];
+    const audio = parts.find((p) => p.inlineData?.data);
+    const text = parts.filter((p) => p.text).map((p) => p.text).join("\n");
+    if (!audio) { lastErr = `${o.model} が音声を返しませんでした`; continue; }
+    const bin = atob(audio.inlineData!.data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { buffer: await o.ctx.decodeAudioData(bytes.buffer), text };
+  }
+  throw new Error(lastErr || `${o.model} の生成に失敗しました`);
+}

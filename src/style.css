@@ -107,7 +107,10 @@ main {
 .track-name { border: none; background: none; font-weight: 600; padding: 2px 4px; min-width: 70px; text-align: left; }
 .track .count { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 .badge { color: var(--ghost); border: 1px solid var(--ghost); border-radius: 999px; padding: 0 8px; font-size: 12px; }
-.mute { padding: 2px 9px; }
+.mute, .solo { padding: 2px 9px; }
+.track .vol { width: 110px; }
+.track .preset { padding: 2px 6px; font-size: 13px; }
+@media (max-width: 700px) { .track { flex-wrap: wrap; } .track .vol { width: 90px; } }
 .roll-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
 .roll-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px; }
 #roll { width: 100%; height: 440px; display: block; touch-action: none; }
@@ -118,6 +121,9 @@ main {
 .card[hidden] { display: none; }
 .wide { width: 100%; }
 .check { color: var(--text); }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field select { width: 100%; }
+.hint { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .status { margin: 0; min-height: 1.6em; color: var(--muted); }
 .status.error { color: var(--error); }
