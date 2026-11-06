@@ -302,6 +302,7 @@ askBtn.onclick = async () => {
   const apiKey = apiKeyInput.value.trim();
   const targetId = targetSel.value as TrackId;
   const target = trackRole(project,targetId);
+  const model = modelSel.value;
   const intent = intentInput.value.trim() || "この曲に合うシンプルなフレーズ";
   askBtn.disabled = true;
   requestedCount = Math.min(4,Math.max(1,Number(candidateCount.value)||1));
@@ -330,10 +331,8 @@ askBtn.onclick = async () => {
     const seconds = 2 + barSec * (project.bars + 1);
     // Lyria は既存トラックの音声を聴けないので、音符の内容を英語の説明にしてプロンプトに添える
     const context = describeForLyria(project, targetId);
-    // ドラムの検出は曲のテンポで格子に合わせる前提なので、テンポを守る RealTime を使う
-    const model = target === "drums" ? "realtime" : modelSel.value;
     if (model === "realtime" && modelSel.querySelector<HTMLOptionElement>('option[value="realtime"]')!.disabled) {
-      throw new Error("Lyria RealTime が使えない設定です（中継サーバーに AI Studio のキーがない）。ドラムの提案は RealTime が必要です");
+      throw new Error("Lyria RealTime が使えない設定です（中継サーバーに AI Studio のキーがない）。設定で別のモデルを選んでください");
     }
     let fulls: AudioBuffer[];
     if (model === "realtime") {

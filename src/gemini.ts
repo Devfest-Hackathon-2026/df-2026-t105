@@ -58,7 +58,7 @@ ${(Object.keys(p.tracks) as TrackId[]).map((id) => "- " + describeTrack(p, id)).
 
 They want a suggestion for the ${role}. Their intent (may be Japanese): """${intent}"""
 
-Lyria RealTime will generate audio for ONLY this part, which will then be transcribed to MIDI.
+Lyria will generate audio for ONLY this part, which will then be transcribed to MIDI.
 ${count === 1 ? "Return exactly ONE candidate that fits the intent." : `Return exactly ${count} candidates with different interpretations of the intent (register, rhythm density, contour).`}
 For each candidate:
 ${instrumentRules}
