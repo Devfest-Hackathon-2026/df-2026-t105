@@ -1,3 +1,4 @@
+import { muscriptorNotes } from "./core/muscriptor.js";
 import { findGridPhase } from "./core/clean.js";
 import type { Note } from "./state";
 import { encodeMonoWav } from "./wav";
@@ -5,19 +6,15 @@ import { encodeMonoWav } from "./wav";
 export type MusNote = { pitch: number; start: number; end: number };
 
 /** 中継サーバー経由で muscriptor に採譜を頼む（サーバーに MUSCRIPTOR_URL が設定されているときだけ使える） */
-export async function transcribeWithMuscriptor(mono: Float32Array, sampleRate: number, instruments: string[]): Promise<MusNote[]> {
-  const r = await fetch(`${location.origin}/api/transcribe?instruments=${encodeURIComponent(instruments.join(","))}`, {
+export async function transcribeWithMuscriptor(mono: Float32Array, sampleRate: number, instruments: string[], backend: "cpu" | "a100" = "cpu"): Promise<MusNote[]> {
+  const r = await fetch(`${location.origin}/api/transcribe?instruments=${encodeURIComponent(instruments.join(","))}&backend=${backend}`, {
     method: "POST",
     headers: { "Content-Type": "audio/wav" },
     body: encodeMonoWav(mono, sampleRate),
   });
   if (!r.ok) throw new Error(`muscriptor の採譜に失敗しました（${r.status}）: ${(await r.text()).slice(0, 200)}`);
   const { events } = (await r.json()) as { events: { type: string; pitch?: number; start_time?: number; end_time?: number; index?: number; start_event_index?: number }[] };
-  const starts = new Map(events.filter((e) => e.type === "start").map((e) => [e.index!, e]));
-  return events
-    .filter((e) => e.type === "end")
-    .map((e) => { const s = starts.get(e.start_event_index!)!; return { pitch: s.pitch!, start: s.start_time!, end: e.end_time! }; })
-    .sort((a, b) => a.start - b.start);
+  return muscriptorNotes(events);
 }
 
 /** GM のドラムの音番号を、Ghostnotes の3つの行（キック 36、スネア 38、ハイハット 42）にまとめる */

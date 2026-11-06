@@ -14,6 +14,8 @@
     "doc-page": "node scripts/doc-page/build.mjs docs/経緯と設計.md out/ghostnotes-design.html"
   },
   "dependencies": {
+    "spessasynth_core": "^4.4.8",
+    "spessasynth_lib": "^4.4.6",
     "ws": "^8.18.3"
   },
   "devDependencies": {

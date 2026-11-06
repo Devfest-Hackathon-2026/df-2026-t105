@@ -43,13 +43,13 @@ const SPEC_SCHEMA = {
  * 2案は、意図の解釈が違うもの（例: 音域を上げて目立たせる案と、音数を減らして寄り添う案）にする。
  * 同じ意図でも解釈が複数あることを利用者に見せ、どちらを採るかを利用者に決めてもらうため。
  */
-export async function intentToSpecs(apiKey: string, p: Project, target: TrackId, intent: string): Promise<LyriaSpec[]> {
+export async function intentToSpecs(apiKey: string, p: Project, target: TrackId, intent: string, count: 1 | 2 = 1): Promise<LyriaSpec[]> {
   const role = target === "bass" ? "bassline" : target === "drums" ? "drum pattern" : "lead melody";
   const instrumentRules =
     target === "drums"
       ? `- Use only a dry drum kit with kick, snare and closed hi-hat (no cymbal crashes, toms, percussion or reverb), because only these three are transcribed.
 - Always include "dry drum kit, kick, snare, closed hi-hat" in the first prompt. Do not mention bass or any pitched instrument in the prompts (they leak into the kick band and break the transcription).`
-      : `- Pick ONE instrument from this list (they transcribe reliably): ${target === "bass" ? '"synth bass", "electric bass (fingered)", "upright bass"' : '"square-wave synth lead", "flute", "whistling", "ocarina", "marimba"'}. Never guitar, piano, clarinet, strings, pads or choirs (they are hard to transcribe). The two candidates may use different instruments.
+      : `- Pick ONE instrument from this list (they transcribe reliably): ${target === "bass" ? '"synth bass", "electric bass (fingered)", "upright bass"' : '"square-wave synth lead", "flute", "whistling", "ocarina", "marimba"'}. Never guitar, piano, clarinet, strings, pads or choirs (they are hard to transcribe). Candidates may use different instruments.
 - Always include the words "solo", "monophonic", "dry" in the first prompt. No chords, no reverb.`;
   const prompt = `You help a beginner music producer. They are writing a ${p.bars}-bar loop at ${p.bpm} BPM in ${p.root} major / its relative minor.
 Current tracks (MIDI, 16th-note steps):
@@ -58,21 +58,21 @@ ${(["drums", "bass", "lead"] as TrackId[]).map((id) => "- " + describeTrack(p, i
 They want a suggestion for the ${role}. Their intent (may be Japanese): """${intent}"""
 
 Lyria RealTime will generate audio for ONLY this part, which will then be transcribed to MIDI.
-Return exactly TWO candidates that interpret the intent differently (e.g. different register, rhythm density, or contour), so the user can compare and choose.
+${count === 1 ? "Return exactly ONE candidate that fits the intent." : "Return exactly TWO candidates with different interpretations of the intent (register, rhythm density, contour)."}
 For each candidate:
 ${instrumentRules}
 - Describe the musical character that serves the intent and fits the other tracks (rhythm, register, contour, energy).
 - 1 to 3 weighted prompts, short English phrases.
 - density 0..1 (how busy), brightness 0..1, guidance 3..5.
 - title: a short Japanese label (max 16 chars) that names the interpretation, e.g. "高音で歌い上げる".
-- rationale: 2 sentences in Japanese explaining how this candidate interprets the intent and what trade-off it makes compared to the other candidate, written for a beginner.`;
+- rationale: one short Japanese sentence explaining how this phrase fits the intent. No introduction.`;
   const r = await callJson<{ candidates: LyriaSpec[] }>(apiKey, prompt, {
     type: "OBJECT",
     properties: { candidates: { type: "ARRAY", items: SPEC_SCHEMA } },
     required: ["candidates"],
   });
   if (!r.candidates?.length) throw new Error("Gemini が候補を返しませんでした");
-  return r.candidates.slice(0, 2);
+  return r.candidates.slice(0, count);
 }
 
 /** 採用候補のゴーストノートについて、どんなフレーズなのかを初心者向けに説明する */

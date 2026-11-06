@@ -1,9 +1,11 @@
+import { midiProgram } from "./soundfont";
+import { muscriptorInstruments } from "./core/muscriptor.js";
 import "./style.css";
 import { Engine, PRESETS, renderMix } from "./audio";
 import { downloadBytes, encodeWav } from "./wav";
 import { cleanToGhost, estimateKey, NOTE_NAMES } from "./core/clean.js";
 import { downloadMidi, toMidiFile } from "./core/midi.js";
-import { explainGhost, intentToSpecs } from "./gemini";
+import { intentToSpecs } from "./gemini";
 import { buildClipPrompt, generate, generateClip, serverConfig, slice, type ClipModel } from "./lyria";
 import { KEY_W, Roll } from "./roll";
 import { VelocityLane } from "./velocity";
@@ -17,7 +19,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 
 const engine = new Engine(() => project);
 const roll = new Roll($("roll"), () => project, onEdit);
-roll.onAudition = (pitch) => engine.audition(roll.track, pitch);
+roll.onAudition = (pitch) => { void engine.audition(roll.track, pitch).catch((e) => setStatus(e.message, true)); };
 const vel = new VelocityLane($("vel"), () => project, () => roll.track, (id, n, v) => onEdit("move", id, n, { ...n, vel: v }));
 engine.onStep = (s) => {
   roll.playStep = s;
@@ -45,9 +47,11 @@ function renderPlay(playing: boolean) {
 playBtn.onclick = async () => {
   const willPlay = !engine.playing;
   stopPreview();
-  if (willPlay) await engine.start();
-  else engine.stop();
-  renderPlay(willPlay);
+  try {
+    if (willPlay) { setStatus("音源を準備しています"); await engine.start(); setStatus(""); }
+    else engine.stop();
+    renderPlay(willPlay);
+  } catch (e) { setStatus((e as Error).message, true); renderPlay(false); }
 };
 $("toStart").onclick = async () => {
   const was = engine.playing;
@@ -101,8 +105,8 @@ $("exportMidi").onclick = () => {
   const bytes = toMidiFile(
     [
       { name: "Drums", channel: 9, notes: tr.drums.notes },
-      { name: "Bass", channel: 1, program: 38, notes: tr.bass.notes },
-      { name: "Lead", channel: 0, program: 80, notes: tr.lead.notes },
+      { name: "Bass", channel: 1, program: midiProgram("bass", tr.bass.preset), notes: tr.bass.notes },
+      { name: "Lead", channel: 0, program: midiProgram("lead", tr.lead.preset), notes: tr.lead.notes },
     ],
     { bpm: project.bpm },
   );
@@ -239,10 +243,18 @@ const MODEL_KEY = "ghostnotes.model";
 modelSel.value = safeGet(MODEL_KEY) ?? "lyria-3.5";
 // 中継サーバーが Vertex を使うときは 3.5 の代わりに 3 Pro になり、AI Studio のキーがなければ RealTime は使えない
 // サーバー側に muscriptor があれば、ドラムの耳コピに使う（帯域の音量で拾う drums.js より、キックとスネアの取り違えが少ない）
-let transcriber: "basic-pitch" | "muscriptor" = "basic-pitch";
+const transcriberSel = $<HTMLSelectElement>("transcriber");
+transcriberSel.value = safeGet("ghostnotes.transcriber") ?? "browser";
+transcriberSel.onchange = () => safeSet("ghostnotes.transcriber", transcriberSel.value);
+const candidateCount = $<HTMLSelectElement>("candidateCount");
+candidateCount.value = safeGet("ghostnotes.candidateCount") ?? "1";
+candidateCount.onchange = () => safeSet("ghostnotes.candidateCount", candidateCount.value);
+let requestedCount = 1;
 void serverConfig().then((c) => {
   if (!c) return;
-  if ((c as { transcriber?: string }).transcriber === "muscriptor") transcriber = "muscriptor";
+  const cpuAvailable = (c as { transcriber?: string }).transcriber === "muscriptor";
+  transcriberSel.querySelector<HTMLOptionElement>('option[value="cpu"]')!.disabled = !cpuAvailable;
+  if (!cpuAvailable && transcriberSel.value === "cpu") transcriberSel.value = "browser";
   const opt35 = modelSel.querySelector<HTMLOptionElement>('option[value="lyria-3.5"]')!;
   if (c.musicModels["lyria-3.5"] === "lyria-3-pro-preview") opt35.textContent = "Lyria 3 Pro（音質重視・Vertex）";
   const rt = modelSel.querySelector<HTMLOptionElement>('option[value="realtime"]')!;
@@ -281,14 +293,16 @@ askBtn.onclick = async () => {
   const target = targetSel.value as Target;
   const intent = intentInput.value.trim() || "この曲に合うシンプルなフレーズ";
   askBtn.disabled = true;
+  requestedCount = candidateCount.value === "2" ? 2 : 1;
+  const backend = transcriberSel.value as "browser" | "cpu" | "a100";
   try {
     setStatus("1/4 意図を解釈しています");
     let specs: LyriaSpec[];
     try {
-      specs = await intentToSpecs(apiKey, project, target, intent);
+      specs = await intentToSpecs(apiKey, project, target, intent, requestedCount as 1 | 2);
     } catch (e) {
       console.warn(e);
-      specs = FALLBACK(target);
+      specs = FALLBACK(target).slice(0, requestedCount);
     }
     const barSec = (60 / project.bpm) * 4;
     const seconds = 2 + barSec * (project.bars + 1);
@@ -340,11 +354,14 @@ askBtn.onclick = async () => {
       setStatus(`3/4 案${LABELS[k]}を耳コピしています`);
       let g: Ghost;
       if (target === "drums") {
-        g = await makeDrumGhost(intent, specs[k], fulls[k], logIndex, k);
+        g = await makeDrumGhost(intent, specs[k], fulls[k], logIndex, k, backend);
       } else {
         // 非リアルタイムのモデルは1分ほどの曲を返すので、耳コピは先頭の約35秒だけにする（時間を抑えるため）
         const src = model === "realtime" ? fulls[k] : slice(engine.context, fulls[k], 0, Math.min(fulls[k].duration, 35));
-        const raw = await transcribe(src, (p) => setStatus(`3/4 案${LABELS[k]}を耳コピしています ${Math.round(p * 100)}%`));
+        const raw = backend === "browser"
+          ? await transcribe(src, (p) => setStatus(`3/4 耳コピしています ${Math.round(p * 100)}%`))
+          : (await transcribeWithMuscriptor(await toMono22k(src), 22050, muscriptorInstruments(target, specs[k].prompts), backend))
+            .map((n) => ({ startTimeSeconds: n.start, durationSeconds: n.end - n.start, pitchMidi: n.pitch, amplitude: 0.8 }));
         g = makeGhost(target, intent, specs[k], fulls[k], raw, logIndex, k, undefined, model !== "realtime");
         g.model = model;
       }
@@ -352,9 +369,7 @@ askBtn.onclick = async () => {
       // 最初の案ができた時点で見せる（2案目の耳コピを待たせない）
       if (k === 0) { showAlt(target, 0); }
       else commit();
-      explainGhost(apiKey, project, target, g.notes, intent)
-        .catch(() => "（説明を取得できませんでした）")
-        .then((x) => { g.explanation = x; renderGhostPanel(); });
+
     }
     if (!t.alts.some((g) => g.notes.length)) throw new Error("音を拾えませんでした。もう一度試すか、意図の書き方を変えてください");
     project.log[logIndex].proposed = Math.max(...t.alts.map((g) => g.proposed));
@@ -393,19 +408,16 @@ function stopPreview() {
  * ドラムのゴーストを作る（試験的）。Lyria にドラムだけを叩かせ、帯域ごとの音の立ち上がりから
  * キック・スネア・ハイハットの位置を拾う。basic-pitch は音の高さを持つ楽器向けなので使わない。
  */
-async function makeDrumGhost(intent: string, spec: LyriaSpec, full: AudioBuffer, logIndex: number, k: number): Promise<Ghost> {
+async function makeDrumGhost(intent: string, spec: LyriaSpec, full: AudioBuffer, logIndex: number, k: number, backend: "browser" | "cpu" | "a100"): Promise<Ghost> {
   const mono = await toMono22k(full);
-  if (transcriber === "muscriptor") {
-    try {
-      const hits = await transcribeWithMuscriptor(mono, 22050, ["drums"]);
+  if (backend !== "browser") {
+      const hits = await transcribeWithMuscriptor(mono, 22050, ["drums"], backend);
       const { notes, startSec } = drumsToGhost(hits, project.bpm, project.bars);
       return {
         notes, conf: notes.map(() => 0.8), full, startSec, sourceBpm: project.bpm, raw: [], ampRatio: 0.5,
         spec, intent, explanation: "", logIndex, label: LABELS[k], proposed: notes.length, accepted: 0, model: "muscriptor",
       };
-    } catch (e) {
-      console.warn("muscriptor が使えなかったので、帯域の音量で拾う方法に切り替える", e);
-    }
+
   }
   const startSec = estimateStartSec(mono, 22050, project.bpm);
   const g: Ghost = {
@@ -702,9 +714,9 @@ function renderGhostPanel() {
         ${nb ? `<span class="badge">${nb}小節採用</span>` : a.accepted ? `<span class="badge">${a.accepted}音採用</span>` : ""}
         <button class="icon-btn listen" data-listen="${k}" title="案${a.label}の原音を聴く" aria-label="案${a.label}の原音を聴く"><svg><use href="#i-speaker" /></svg></button>
       </div>
-      <p class="take-why">${esc(a.spec.rationale)}</p>
+
     </div>`;
-  }).join("") + (alts.length < 2 && askBtn.disabled ? `<span class="hint">案Bを準備中</span>` : "");
+  }).join("") + (alts.length < requestedCount && askBtn.disabled ? `<span class="hint">案Bを準備中</span>` : "");
   for (const b of $("alts").querySelectorAll<HTMLButtonElement>(".take-pick")) b.onclick = () => showAlt(t.id, Number(b.dataset.alt));
   for (const b of $("alts").querySelectorAll<HTMLButtonElement>("[data-listen]")) {
     b.onclick = () => {
@@ -720,7 +732,8 @@ function renderGhostPanel() {
   sens.value = String(Math.round((t.id === "drums" ? g.ampRatio : 1 - g.ampRatio) * 100));
   const sure = g.conf.filter((c) => c > 0.6).length;
   $("ghostSummary").textContent = `${g.notes.length}音・確からしい音 ${sure}・採用 ${g.accepted}`;
-  $("explain").textContent = g.explanation || "説明を作っています…";
+  $("explain").textContent = g.explanation;
+  $("explainDetails").hidden = !g.explanation;
 }
 
 function renderLog() {

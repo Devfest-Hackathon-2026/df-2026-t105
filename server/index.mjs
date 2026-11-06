@@ -1,3 +1,4 @@
+import { parseTranscription } from "./transcription.mjs";
 // 公開用の中継サーバー。API キーや GCP の認証はこのサーバーだけが持ち、ブラウザには渡さない。
 // - GET  /*                       : ビルド済みの画面（dist/）を返す
 // - GET  /api/config              : どのモデルが使えるか（画面がモデルの選択肢を決めるのに使う）
@@ -31,6 +32,7 @@ if (!KEY && !VERTEX_PROJECT) {
 const BACKEND = VERTEX_PROJECT ? "vertex" : "aistudio";
 // muscriptor のサーバー（`muscriptor serve`）。設定されていれば、ドラムなどの耳コピに使う
 const MUSCRIPTOR_URL = process.env.MUSCRIPTOR_URL;
+const MUSCRIPTOR_A100_URL = process.env.MUSCRIPTOR_A100_URL ?? "http://127.0.0.1:8223";
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
 const ALLOWED_MODELS = new Set(["gemini-flash-latest", "gemini-3.5-flash-lite"]);
 // 画面が指定する作曲モデル → 実際に呼ぶモデル。Vertex には 3.5 がないので 3 Pro で代える
@@ -175,7 +177,10 @@ async function compose(req, res, requested) {
 
 /** 音声を muscriptor に送り、SSE で返ってくる音符のイベントを集めて JSON で返す */
 async function transcribeWithMuscriptor(req, res, url) {
-  if (!MUSCRIPTOR_URL) { res.writeHead(404).end("muscriptor is not configured"); return; }
+  const backend = url.searchParams.get("backend") ?? "cpu";
+  if (!["cpu", "a100"].includes(backend)) { res.writeHead(400).end("unknown transcription backend"); return; }
+  const endpoint = backend === "a100" ? MUSCRIPTOR_A100_URL : MUSCRIPTOR_URL;
+  if (!endpoint) { res.writeHead(503).end("MuScriptor CPU is not configured"); return; }
   if (!allow(clientIp(req), "transcribe")) { res.writeHead(429).end("too many requests"); return; }
   const body = await readBody(req, 20 * 1024 * 1024);
   if (!body) { res.writeHead(413).end("too large"); return; }
@@ -183,11 +188,17 @@ async function transcribeWithMuscriptor(req, res, url) {
   form.append("file", new Blob([body], { type: "audio/wav" }), "take.wav");
   for (const inst of (url.searchParams.get("instruments") ?? "").split(",").filter(Boolean)) form.append("instruments", inst);
   form.append("detect_tempo", "false");
-  const r = await fetch(`${MUSCRIPTOR_URL}/transcribe`, { method: "POST", body: form });
-  if (!r.ok) { res.writeHead(r.status, { "Content-Type": "text/plain" }).end((await r.text()).slice(0, 300)); return; }
-  const text = await r.text();
-  const events = text.split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6))).filter((e) => e.type === "start" || e.type === "end");
-  res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ events }));
+  try {
+    const r = await fetch(`${endpoint.replace(/\/$/, "")}/transcribe`, { method: "POST", body: form, signal: AbortSignal.timeout(300_000) });
+    if (!r.ok) { res.writeHead(502).end(`MuScriptor ${backend}: HTTP ${r.status}`); return; }
+    const events = parseTranscription(await r.text());
+    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ events, backend }));
+  } catch (e) {
+    console.error(`MuScriptor ${backend}:`, e.message);
+    res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" }).end(backend === "a100"
+      ? "A100 の採譜に接続できません。npm run a100 で起動するか、設定で別の採譜先を選んでください"
+      : "MuScriptor CPU の採譜に失敗しました。サーバーを確認するか、ブラウザ内の採譜を選んでください");
+  }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -196,7 +207,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/healthz") { res.writeHead(200).end("ok"); return; }
     if (url.pathname === "/api/config") {
       res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
-        backend: BACKEND, realtime: !!KEY, music: Object.keys(MUSIC_MODELS), musicModels: MUSIC_MODELS, transcriber: MUSCRIPTOR_URL ? "muscriptor" : "basic-pitch",
+        backend: BACKEND, realtime: !!KEY, music: Object.keys(MUSIC_MODELS), musicModels: MUSIC_MODELS, transcriber: MUSCRIPTOR_URL ? "muscriptor" : "basic-pitch", transcribers: { cpu: !!MUSCRIPTOR_URL, a100: true },
       }));
       return;
     }

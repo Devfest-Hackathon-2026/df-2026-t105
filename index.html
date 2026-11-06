@@ -64,6 +64,9 @@
           <summary aria-label="設定" title="設定"><svg><use href="#i-gear" /></svg></summary>
           <div class="settings-body">
             <label class="stack">Gemini API キー<input id="apiKey" type="password" autocomplete="off" /></label>
+            <label class="stack">生成する案<select id="candidateCount"><option value="1">1案</option><option value="2">2案</option></select></label>
+            <label class="stack">耳コピ<select id="transcriber"><option value="browser">ブラウザ内</option><option value="cpu">MuScriptor CPU</option><option value="a100">MuScriptor A100</option></select></label>
+            <a href="/soundfonts/LICENSE-MuseScore-General.txt" target="_blank" rel="noopener">音源: MuseScore General</a>
             <button id="reset" class="text-btn">デモ曲に戻す</button>
           </div>
         </details>
@@ -104,13 +107,13 @@
             <div class="field">
               <label for="model">Lyria のモデル</label>
               <select id="model">
-                <option value="lyria-3.5">Lyria 3.5（音質重視）</option>
-                <option value="lyria-3-clip-preview">Lyria 3 Clip（短い曲）</option>
-                <option value="realtime">Lyria RealTime（テンポ・キー厳守）</option>
+                <option value="lyria-3.5">Lyria 3.5</option>
+                <option value="lyria-3-clip-preview">Lyria 3 Clip</option>
+                <option value="realtime">Lyria RealTime</option>
               </select>
             </div>
             <label class="check"><input id="monitor" type="checkbox" checked /> 待っている間に Lyria の音を聴く</label>
-            <button id="ask" class="primary wide"><svg><use href="#i-spark" /></svg>2案を生成</button>
+            <button id="ask" class="primary wide"><svg><use href="#i-spark" /></svg>生成する</button>
             <button id="demoBtn" class="text-btn wide" hidden>事前に生成した2案を出す（実演用）</button>
             <div class="progress" aria-hidden="true"><div id="progressBar"></div></div>
             <p id="status" class="status" aria-live="polite"></p>
@@ -122,7 +125,7 @@
             <p id="ghostSummary" class="hint"></p>
             <details class="spec-details"><summary>Lyria への指示</summary><div id="spec" class="spec"></div></details>
             <label class="slider" for="sens">拾う音の量 <span class="hint">少なく</span><input id="sens" type="range" min="20" max="90" value="65" /><span class="hint">多く</span></label>
-            <pre id="explain" class="explain"></pre>
+            <details id="explainDetails" class="spec-details"><summary>フレーズの説明</summary><pre id="explain" class="explain"></pre></details>
             <div class="row">
               <button id="nudgeL" class="text-btn" title="提案を16分ひとつ前へ">← 1/16</button>
               <button id="nudgeR" class="text-btn" title="提案を16分ひとつ後ろへ">1/16 →</button>

@@ -1,15 +1,23 @@
 import * as Tone from "tone";
+import { SoundFontPlayer, programFor, renderSoundFont } from "./soundfont";
 import type { Note, Project, Track, TrackId } from "./state";
 
 // 音色の候補。トラックの preset にこの名前を入れる
 export const PRESETS: Record<"lead" | "bass", { id: string; name: string }[]> = {
   lead: [
+    { id: "sf:73", name: "フルート" },
+    { id: "sf:0", name: "ピアノ" },
+    { id: "sf:12", name: "マリンバ" },
+    { id: "sf:80", name: "シンセリード" },
     { id: "square", name: "矩形波" },
     { id: "saw", name: "ノコギリ波" },
     { id: "soft", name: "やわらかい" },
     { id: "pluck", name: "はじく" },
   ],
   bass: [
+    { id: "sf:33", name: "指弾きベース" },
+    { id: "sf:32", name: "コントラバス" },
+    { id: "sf:38", name: "シンセベース" },
     { id: "saw", name: "ノコギリ波" },
     { id: "sub", name: "サブベース" },
     { id: "pluck", name: "はじく" },
@@ -99,6 +107,7 @@ export function audibleTracks(p: Project): Track[] {
 /** 再生エンジン。16分ごとに今の状態を読んで鳴らすので、編集のたびに組み直す必要がない */
 export class Engine {
   private ins: Instruments;
+  private soundfont = new SoundFontPlayer();
   private presetKey = "";
   private lyria: Tone.Player | null = null;
   private shifter: Tone.PitchShift | null = null;
@@ -138,9 +147,13 @@ export class Engine {
     const sixteenth = Tone.Time("16n").toSeconds();
     Tone.getDraw().schedule(() => this.onStep(step), time);
     for (const t of audibleTracks(p)) {
-      for (const n of t.notes) if (n.step === step) trigger(this.ins, t.id, n, time, sixteenth, false);
-      if (this.mode === "B" && t.ghost) for (const n of t.ghost.notes) if (n.step === step) trigger(this.ins, t.id, n, time, sixteenth, true);
+      for (const n of t.notes) if (n.step === step) this.trigger(t, n, time, sixteenth, false);
+      if (this.mode === "B" && t.ghost) for (const n of t.ghost.notes) if (n.step === step) this.trigger(t, n, time, sixteenth, true);
     }
+  }
+
+  private trigger(t: Track, n: Note, time: number, sixteenth: number, ghost: boolean) {
+    if (!this.soundfont.play(t, n, time, n.len * sixteenth * 0.95, ghost)) trigger(this.ins, t.id, n, time, sixteenth, ghost);
   }
 
   /**
@@ -174,6 +187,8 @@ export class Engine {
 
   async start() {
     await Tone.start();
+    await this.soundfont.ready();
+    this.soundfont.resume();
     const p = this.get();
     const tr = Tone.getTransport();
     tr.bpm.value = p.bpm;
@@ -185,6 +200,7 @@ export class Engine {
   }
   stop() {
     Tone.getTransport().stop();
+    this.soundfont.stop();
     this.onStep(-1);
   }
   get playing() {
@@ -196,7 +212,8 @@ export class Engine {
   /** 鍵盤を押したときなどに、その場で1音鳴らす */
   async audition(id: TrackId, pitch: number) {
     await Tone.start();
-    trigger(this.ins, id, { step: 0, len: 2, pitch, vel: 0.8 }, Tone.now() + 0.01, 60 / this.get().bpm / 4, false);
+    await this.soundfont.ready();
+    this.trigger(this.get().tracks[id], { step: 0, len: 2, pitch, vel: 0.8 }, Tone.now() + 0.01, 60 / this.get().bpm / 4, false);
   }
   setBars(bars: number) {
     Tone.getTransport().loopEnd = `${bars}m`;
@@ -214,14 +231,21 @@ export async function renderMix(p: Project, loops = 2): Promise<AudioBuffer> {
   const sixteenth = 60 / p.bpm / 4;
   const loopSec = sixteenth * 16 * p.bars;
   const tail = 1.5;
+  const sfTracks = audibleTracks(p).filter((t) => programFor(t.id, t.preset) !== null);
+  const sf = sfTracks.length ? await renderSoundFont(p, sfTracks, loops, loopSec * loops + tail) : null;
   const rendered = await Tone.Offline(() => {
     const master = new Tone.Gain(0.9).toDestination();
     const ins = makeInstruments(p, master);
     for (let k = 0; k < loops; k++) {
       for (const t of audibleTracks(p)) {
-        for (const n of t.notes) trigger(ins, t.id, n, k * loopSec + n.step * sixteenth, sixteenth, false);
+        for (const n of t.notes.filter((n) => n.step < p.bars * 16 && programFor(t.id, t.preset) === null)) trigger(ins, t.id, n, k * loopSec + n.step * sixteenth, sixteenth, false);
       }
     }
   }, loopSec * loops + tail, 2, 44100);
-  return rendered.get() as AudioBuffer;
+  const result = rendered.get() as AudioBuffer;
+  if (sf) for (let ch = 0; ch < 2; ch++) {
+    const dst = result.getChannelData(ch), src = sf.getChannelData(ch);
+    for (let i = 0; i < dst.length; i++) dst[i] += src[i] * 0.9;
+  }
+  return result;
 }
