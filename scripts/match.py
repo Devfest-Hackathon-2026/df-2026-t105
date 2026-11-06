@@ -4,7 +4,7 @@
 import sys, json, numpy as np, librosa
 base = sys.argv[1]
 meta = json.load(open(base + ".ghost.json"))
-bpm, start = meta["bpm"], meta["startSec"]
+bpm, start = meta.get("sourceBpm", meta["bpm"]), meta["startSec"]
 dur = 60 / bpm * 4 * 4
 sr = 22050
 orig, _ = librosa.load(base + ".wav", sr=sr, mono=True, offset=max(0, start), duration=dur)

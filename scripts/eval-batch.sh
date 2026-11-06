@@ -53,10 +53,11 @@ analyze() {
   IFS='|' read -r name role root bpm prompt <<<"$1"
   local b="out/eval/$name"
   [ -f "$b.wav" ] || { echo "{\"base\":\"$b\",\"error\":\"no audio\"}"; return; }
-  node scripts/transcribe.mjs "$b.wav" --bpm "$bpm" --scale "$root" --json "$b.json" 2>/dev/null | tail -1 > "$b.tr.json"
-  node scripts/ghost-render.mjs "$b" --bpm "$bpm" --root "$root" --role "$role" > /dev/null
+  # 耳コピは決定的なので、結果があれば使い回す（整形と指標だけやり直す）
+  [ -s "$b.tr.json" ] && [ -f "$b.json" ] || node scripts/transcribe.mjs "$b.wav" --bpm "$bpm" --scale "$root" --json "$b.json" 2>/dev/null | tail -1 > "$b.tr.json"
+  local gr; gr=$(node scripts/ghost-render.mjs "$b" --bpm "$bpm" --root "$root" --role "$role" | head -1)
   local mt; mt=$(uv run -q --with librosa==0.11.0 python scripts/match.py "$b" 2>/dev/null | tail -1)
-  node -e "const a=$(cat "$b.tr.json"),m=$mt;console.log(JSON.stringify({name:'$name',role:'$role',bpm:$bpm,inScale:a.inScaleRatio,gridErrMs:a.meanGridErrorMs,randGridMs:a.randomBaselineMs,maxPoly:a.maxPolyphony,rawNotes:a.notes,...m}))"
+  node -e "const a=$(cat "$b.tr.json"),g=$gr,m=$mt;console.log(JSON.stringify({name:'$name',role:'$role',bpm:$bpm,sourceBpm:g.sourceBpm,inScale:a.inScaleRatio,gridErrMs:a.meanGridErrorMs,randGridMs:a.randomBaselineMs,maxPoly:a.maxPolyphony,rawNotes:a.notes,...m}))"
 }
 i=0
 for spec in "${MEL[@]}"; do

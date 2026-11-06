@@ -67,14 +67,15 @@ export class Engine {
     }
   }
 
-  setLyria(buf: AudioBuffer | null) {
+  /** rate: 曲のテンポ ÷ 演奏のテンポ。1 からずれるぶん音の高さもわずかに変わる（数%なら半音未満） */
+  setLyria(buf: AudioBuffer | null, rate = 1) {
     this.lyria?.unsync().dispose();
     this.lyria = null;
     if (!buf) return;
-    const p = this.get();
     this.lyria = new Tone.Player(buf).connect(this.lyriaGain);
+    this.lyria.playbackRate = rate;
     this.lyria.loop = true;
-    this.lyria.loopEnd = (60 / p.bpm) * 4 * p.bars;
+    this.lyria.loopEnd = buf.duration;
     this.lyria.sync().start(0);
     this.applyMode();
   }

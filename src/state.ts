@@ -7,6 +7,8 @@ export type Ghost = {
   /** Lyria の出力全体と、ゴーストの 0 ステップ目に当たる秒数 */
   full: AudioBuffer;
   startSec: number;
+  /** Lyria が実際に演奏したテンポの推定値（指定した BPM から数%ずれることがある） */
+  sourceBpm: number;
   /** basic-pitch の生の出力。整形の強さを変えて作り直すときに使う */
   raw: { startTimeSeconds: number; durationSeconds: number; pitchMidi: number; amplitude: number }[];
   ampRatio: number;

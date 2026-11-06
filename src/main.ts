@@ -158,7 +158,7 @@ askBtn.onclick = async () => {
       const raw = await transcribe(fulls[k], (p) => setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch） ${Math.round(p * 100)}%`));
       const res = cleanToGhost(raw, { bpm: project.bpm, root: project.root, role: target, bars: project.bars });
       const g: Ghost = {
-        notes: res.notes, conf: confidence(res.notes, project.bars * 16), full: fulls[k], startSec: res.startSec, raw, ampRatio: 0.35,
+        notes: res.notes, conf: confidence(res.notes, project.bars * 16), full: fulls[k], startSec: res.startSec, sourceBpm: res.sourceBpm, raw, ampRatio: 0.35,
         spec: specs[k], intent, explanation: "", logIndex, label: LABELS[k], proposed: res.notes.length, accepted: 0,
       };
       t.alts.push(g);
@@ -204,9 +204,10 @@ function confidence(notes: Note[], steps: number): number[] {
   });
 }
 
+/** Lyria の原音から、ゴーストと同じ4小節を切り出す。演奏のテンポが曲とずれていれば再生速度で合わせる */
 function applyLyriaSlice(g: Ghost) {
-  const sec = (60 / project.bpm) * 4 * project.bars;
-  engine.setLyria(slice(engine.context, g.full, g.startSec, sec));
+  const sec = (60 / g.sourceBpm) * 4 * project.bars;
+  engine.setLyria(slice(engine.context, g.full, g.startSec, sec), project.bpm / g.sourceBpm);
 }
 
 function nudge(d: number) {
@@ -217,7 +218,7 @@ function nudge(d: number) {
   for (const n of g.notes) n.step = (n.step + d + steps) % steps;
   g.notes.sort((a, b) => a.step - b.step);
   g.conf = confidence(g.notes, steps);
-  g.startSec -= d * (60 / project.bpm / 4);
+  g.startSec -= d * (60 / g.sourceBpm / 4);
   applyLyriaSlice(g);
   commit();
 }
@@ -227,7 +228,7 @@ function reclean(ampRatio: number) {
   const g = project.tracks[id].ghost;
   if (!g || id === "drums") return;
   g.ampRatio = ampRatio;
-  const res = cleanToGhost(g.raw, { bpm: project.bpm, root: project.root, role: id, bars: project.bars, startSec: g.startSec, ampRatio });
+  const res = cleanToGhost(g.raw, { bpm: project.bpm, root: project.root, role: id, bars: project.bars, startSec: g.startSec, sourceBpm: g.sourceBpm, ampRatio });
   g.notes = res.notes;
   g.conf = confidence(g.notes, project.bars * 16);
   commit();

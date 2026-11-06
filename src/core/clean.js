@@ -26,15 +26,34 @@ export function findGridPhase(notes, bpm) {
   return best;
 }
 
+/**
+ * Lyria は指定した BPM から数%ずれて演奏することがあるので、実際のテンポを指定値の前後 8% から探す。
+ * 候補を増やすほど偶然に格子へ合う候補も出やすくなるため、指定値より 20% 以上よく合うときだけ乗り換える。
+ * @returns {{ bpm:number, phase:number, errRatio:number, nominalErrRatio:number }}
+ */
+export function estimateTempo(notes, bpm) {
+  const score = (b) => {
+    const r = findGridPhase(notes, b);
+    return { bpm: b, phase: r.phase, errRatio: r.err / (60 / b / 4) };
+  };
+  const nominal = score(bpm);
+  let best = nominal;
+  for (let k = 0.92; k <= 1.0801; k += 0.005) {
+    const c = score(bpm * k);
+    if (c.errRatio < best.errRatio) best = c;
+  }
+  const chosen = best.errRatio < nominal.errRatio * 0.8 ? best : nominal;
+  return { ...chosen, nominalErrRatio: nominal.errRatio };
+}
+
 const ROLE_RANGE = { lead: [57, 84], bass: [28, 52], chords: [48, 79] };
 
 /**
  * @param {Array<{startTimeSeconds:number,durationSeconds:number,pitchMidi:number,amplitude:number}>} raw
- * @param {{bpm:number, root:string|number, role:'lead'|'bass', startSec?:number, bars?:number, ampRatio?:number}} o
- * @returns {{notes:Array<{step:number,len:number,pitch:number,vel:number}>, phase:number, startSec:number, dropped:object}}
+ * @param {{bpm:number, root:string|number, role:'lead'|'bass', startSec?:number, sourceBpm?:number, bars?:number, ampRatio?:number}} o
+ * @returns {{notes:Array<{step:number,len:number,pitch:number,vel:number}>, phase:number, startSec:number, sourceBpm:number, dropped:object}}
  */
 export function cleanToGhost(raw, o) {
-  const step = 60 / o.bpm / 4;
   const bars = o.bars ?? 4;
   const steps = bars * 16;
   const pcs = scalePitchClasses(o.root);
@@ -48,7 +67,11 @@ export function cleanToGhost(raw, o) {
     return ok;
   });
 
-  const { phase } = findGridPhase(loud, o.bpm);
+  // 演奏の実際のテンポ（sourceBpm）で格子に合わせる。ステップ数は曲のテンポと共通なので、MIDI はそのまま使える
+  const tempo = o.sourceBpm ? { bpm: o.sourceBpm, phase: findGridPhase(loud, o.sourceBpm).phase } : estimateTempo(loud, o.bpm);
+  const sourceBpm = tempo.bpm;
+  const step = 60 / sourceBpm / 4;
+  const phase = tempo.phase;
   // 窓の開始: 指定がなければ、最初の 2 秒（立ち上がりの不安定な部分）を飛ばした最初の小節頭
   const barSec = step * 16;
   const start0 = o.startSec ?? phase + Math.ceil((2 - phase) / barSec) * barSec;
@@ -104,5 +127,5 @@ export function cleanToGhost(raw, o) {
     const next = out[i + 1]?.step ?? steps;
     out[i].len = Math.max(1, Math.min(out[i].len, next - out[i].step));
   }
-  return { notes: out, phase, startSec: start0, dropped };
+  return { notes: out, phase, startSec: start0, sourceBpm, dropped };
 }
