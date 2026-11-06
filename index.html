@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ghostnotes</title>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Ghostnotes</h1>
+        <p>Lyria が弾いたフレーズを耳コピして、採用するかどうかを自分で選ぶミニ DAW</p>
+      </div>
+      <div class="transport">
+        <button id="play" class="primary">▶ 再生</button>
+        <label>BPM <input id="bpm" type="number" min="60" max="200" /></label>
+        <label>キー <select id="key"></select></label>
+        <div class="seg" role="group" aria-label="聴き比べ">
+          <button data-mode="A" title="自分のノートだけ">A 自分</button>
+          <button data-mode="B" title="ゴーストを MIDI で重ねる">B ゴースト</button>
+          <button data-mode="L" title="Lyria の原音を重ねる">L 原音</button>
+        </div>
+        <button id="reset" class="ghost-btn">デモ曲に戻す</button>
+        <label class="key">API キー <input id="apiKey" type="password" placeholder="Gemini API key" autocomplete="off" /></label>
+      </div>
+    </header>
+
+    <main>
+      <section class="editor">
+        <div id="tracks" class="tracks"></div>
+        <div class="roll-wrap">
+          <div class="roll-head"><b id="rollTitle"></b><span class="muted">クリックで音を置く／消す。ゴースト（枠だけの音）はクリックで採用、右クリックで消去</span></div>
+          <canvas id="roll"></canvas>
+        </div>
+      </section>
+
+      <aside class="side">
+        <section class="card">
+          <h2>どうしたいか</h2>
+          <label>対象 <select id="target"><option value="lead">Lead</option><option value="bass">Bass</option></select></label>
+          <textarea id="intent" rows="3" placeholder="例: ベースに寄り添う、少し切ないメロディ。最後の小節で上がって終わりたい"></textarea>
+          <label class="check"><input id="monitor" type="checkbox" checked /> 生成中の音をそのまま聴く</label>
+          <button id="ask" class="primary wide">Lyria に弾いてもらう</button>
+          <p id="status" class="status" aria-live="polite"></p>
+        </section>
+
+        <section id="ghost" class="card" hidden>
+          <h2>提案</h2>
+          <div id="spec" class="spec"></div>
+          <p id="ghostSummary" class="muted"></p>
+          <label class="slider">拾う音の量 <span class="muted">少なく</span><input id="sens" type="range" min="20" max="90" value="65" /><span class="muted">多く</span></label>
+          <pre id="explain" class="explain"></pre>
+          <div class="row">
+            <button id="nudgeL" title="ゴーストを16分ひとつ前へ">← 1/16</button>
+            <button id="nudgeR" title="ゴーストを16分ひとつ後ろへ">1/16 →</button>
+            <button id="acceptAll" class="primary">全部採用 (Tab)</button>
+          </div>
+          <textarea id="reason" rows="2" placeholder="なぜ採用した／しなかったか（あとで見返せます）"></textarea>
+          <div class="row">
+            <button id="close" class="primary">理由を残して閉じる</button>
+            <button id="discard" class="ghost-btn">破棄 (Esc)</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>判断の記録</h2>
+          <ul id="log" class="log"></ul>
+        </section>
+      </aside>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

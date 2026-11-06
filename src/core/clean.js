@@ -31,7 +31,7 @@ const ROLE_RANGE = { lead: [57, 84], bass: [28, 52], chords: [48, 79] };
 /**
  * @param {Array<{startTimeSeconds:number,durationSeconds:number,pitchMidi:number,amplitude:number}>} raw
  * @param {{bpm:number, root:string|number, role:'lead'|'bass', startSec?:number, bars?:number, ampRatio?:number}} o
- * @returns {{notes:Array<{step:number,len:number,pitch:number,vel:number}>, phase:number, dropped:object}}
+ * @returns {{notes:Array<{step:number,len:number,pitch:number,vel:number}>, phase:number, startSec:number, dropped:object}}
  */
 export function cleanToGhost(raw, o) {
   const step = 60 / o.bpm / 4;
@@ -39,7 +39,7 @@ export function cleanToGhost(raw, o) {
   const steps = bars * 16;
   const pcs = scalePitchClasses(o.root);
   const [lo, hi] = ROLE_RANGE[o.role] ?? ROLE_RANGE.lead;
-  const dropped = { quiet: 0, overlap: 0, outOfWindow: 0, snapped: 0 };
+  const dropped = { quiet: 0, overlap: 0, outOfWindow: 0, snapped: 0, merged: 0, outOfRange: 0 };
 
   const maxAmp = Math.max(...raw.map((n) => n.amplitude), 1e-9);
   const loud = raw.filter((n) => {
@@ -62,15 +62,34 @@ export function cleanToGhost(raw, o) {
     (byStep.get(s) ?? byStep.set(s, []).get(s)).push({ ...n, s, len });
   }
 
-  const out = [];
+  // 単音化: 同じステップで鳴る音のうち、そのステップで一番大きい音の半分以上の音量があるものに絞り、
+  // リードは一番高い音（メロディは上に出ることが多い）、ベースは一番低い音を取る
+  const picked = [];
   for (const [s, cands] of [...byStep.entries()].sort((a, b) => a[0] - b[0])) {
-    // 単音化: リードは音量の大きいもの、ベースは最も低いもの
-    cands.sort(o.role === "bass" ? (a, b) => a.pitchMidi - b.pitchMidi : (a, b) => b.amplitude - a.amplitude);
+    const top = Math.max(...cands.map((c) => c.amplitude));
+    const strong = cands.filter((c) => c.amplitude >= top * 0.5);
+    strong.sort(o.role === "bass" ? (a, b) => a.pitchMidi - b.pitchMidi : (a, b) => b.pitchMidi - a.pitchMidi);
     dropped.overlap += cands.length - 1;
-    const c = cands[0];
-    let p = c.pitchMidi;
+    picked.push(strong[0]);
+  }
+  // 音域合わせ: 1音ずつ折り返すと別のメロディになるので、フレーズ全体をオクターブ単位で動かす
+  const sortedP = picked.map((c) => c.pitchMidi).sort((a, b) => a - b);
+  const median = sortedP[sortedP.length >> 1] ?? (lo + hi) / 2;
+  const shift = 12 * Math.round(((lo + hi) / 2 - median) / 12);
+
+  const out = [];
+  for (const c of picked) {
+    let p = c.pitchMidi + shift;
+    if (p < lo - 12 || p > hi + 12) { dropped.outOfRange = (dropped.outOfRange ?? 0) + 1; continue; }
     while (p < lo) p += 12;
     while (p > hi) p -= 12;
+    // 前の音と同じ高さで、前の音がまだ鳴り続けている位置なら、新しい音ではなく伸ばしとみなす
+    const prev = out[out.length - 1];
+    if (prev && prev.pitch === p && prev.step + prev.len > c.s) {
+      prev.len = Math.max(prev.len, c.s + c.len - prev.step);
+      dropped.merged = (dropped.merged ?? 0) + 1;
+      continue;
+    }
     if (!pcs.includes(((p % 12) + 12) % 12)) {
       // 一番近いスケール音へ寄せる（同じ距離なら下）
       const down = [1, 2].find((d) => pcs.includes((((p - d) % 12) + 12) % 12));
@@ -78,7 +97,7 @@ export function cleanToGhost(raw, o) {
       p = down !== undefined && (up === undefined || down <= up) ? p - down : p + up;
       dropped.snapped++;
     }
-    out.push({ step: s, len: c.len, pitch: p, vel: Math.min(1, c.amplitude / maxAmp) });
+    out.push({ step: c.s, len: c.len, pitch: p, vel: Math.min(1, c.amplitude / maxAmp) });
   }
   // 単音なので、次の音と重なる長さは切る
   for (let i = 0; i < out.length; i++) {
