@@ -54,7 +54,7 @@ They want a suggestion for the ${role}. Their intent (may be Japanese): """${int
 Lyria RealTime will generate audio for ONLY this part, which will then be transcribed to MIDI.
 Return exactly TWO candidates that interpret the intent differently (e.g. different register, rhythm density, or contour), so the user can compare and choose.
 For each candidate:
-- Pick ONE instrument from this list (they transcribe reliably): ${target === "bass" ? '"synth bass", "electric bass (fingered)", "upright bass"' : '"square-wave synth lead", "flute", "clarinet", "whistling", "ocarina", "marimba"'}. Never guitar, piano, strings, pads or choirs. The two candidates may use different instruments.
+- Pick ONE instrument from this list (they transcribe reliably): ${target === "bass" ? '"synth bass", "electric bass (fingered)", "upright bass"' : '"square-wave synth lead", "flute", "whistling", "ocarina", "marimba"'}. Never guitar, piano, clarinet, strings, pads or choirs (they are hard to transcribe). The two candidates may use different instruments.
 - Always include the words "solo", "monophonic", "dry" in the first prompt. No chords, no reverb.
 - Describe the musical character that serves the intent and fits the other tracks (rhythm, register, contour, energy).
 - 1 to 3 weighted prompts, short English phrases.

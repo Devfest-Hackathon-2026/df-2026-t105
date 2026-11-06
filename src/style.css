@@ -141,3 +141,7 @@ main {
 .alts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .alts button { text-align: left; }
 .alts button[aria-pressed="true"] .badge { color: inherit; border-color: currentColor; }
+.bar-accept { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; padding-left: 44px; }
+.bar-accept[hidden] { display: none; }
+.bar-accept button { padding: 3px 10px; font-size: 13px; color: var(--ghost); border-color: var(--ghost); }
+.bar-accept button:disabled { color: var(--muted); border-color: var(--line); }

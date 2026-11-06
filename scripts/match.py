@@ -33,10 +33,32 @@ oo = librosa.onset.onset_strength(y=orig, sr=sr, hop_length=hop)
 og = librosa.onset.onset_strength(y=ghost, sr=sr, hop_length=hop)
 k = min(len(oo), len(og))
 onset_corr = float(np.corrcoef(oo[:k], og[:k])[0, 1])
+# 音符単位の出だしの照合: 元の音声から検出した出だしと、ゴーストの各音の開始時刻を ±50ms で対応付けた F 値。
+# 基準値は、同じ数の音を16分音符の格子上にランダムに置いた場合の F 値（20回の平均）。
+def f1(ref, est, tol=0.05):
+    ref, est = sorted(ref), sorted(est)
+    used, hit = set(), 0
+    for t in est:
+        best = None
+        for i, r in enumerate(ref):
+            if i not in used and abs(r - t) <= tol and (best is None or abs(r - t) < abs(ref[best] - t)):
+                best = i
+        if best is not None:
+            used.add(best); hit += 1
+    p = hit / len(est) if est else 0.0
+    r = hit / len(ref) if ref else 0.0
+    return 2 * p * r / (p + r) if p + r else 0.0
+step_sec = 60 / bpm / 4
+ref_on = librosa.onset.onset_detect(y=orig, sr=sr, hop_length=hop, units="time", backtrack=True).tolist()
+est_on = sorted({n["step"] * step_sec for n in meta["notes"]})
+rand_f1 = float(np.mean([f1(ref_on, sorted(rng.choice(64, size=min(64, len(est_on)), replace=False) * step_sec)) for _ in range(20)]))
 print(json.dumps({
     "base": base, "notes": len(meta["notes"]), "activeFrames": int(active.sum()),
     "chroma_match": round(score(co, cg), 3),
     "baseline_shift1beat": round(score(co, shifted), 3),
     "baseline_randompitch": round(score(co, perm), 3),
     "onset_corr": round(onset_corr, 3),
+    "onset_f1": round(f1(ref_on, est_on), 3),
+    "onset_f1_random_grid": round(rand_f1, 3),
+    "detected_onsets": len(ref_on),
 }))

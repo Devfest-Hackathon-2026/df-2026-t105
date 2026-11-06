@@ -156,11 +156,7 @@ askBtn.onclick = async () => {
     for (let k = 0; k < specs.length; k++) {
       setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch）`);
       const raw = await transcribe(fulls[k], (p) => setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch） ${Math.round(p * 100)}%`));
-      const res = cleanToGhost(raw, { bpm: project.bpm, root: project.root, role: target, bars: project.bars });
-      const g: Ghost = {
-        notes: res.notes, conf: confidence(res.notes, project.bars * 16), full: fulls[k], startSec: res.startSec, sourceBpm: res.sourceBpm, raw, ampRatio: 0.35,
-        spec: specs[k], intent, explanation: "", logIndex, label: LABELS[k], proposed: res.notes.length, accepted: 0,
-      };
+      const g = makeGhost(target, intent, specs[k], fulls[k], raw, logIndex, k);
       t.alts.push(g);
       // 最初の案ができた時点で見せる（2案目の耳コピを待たせない）
       if (k === 0) { showAlt(target, 0); }
@@ -182,6 +178,92 @@ askBtn.onclick = async () => {
 };
 
 const LABELS = ["A", "B", "C"];
+
+/** 耳コピの生の結果からゴーストを作る。startSec と sourceBpm を渡すと、推定をやり直さずにその値を使う */
+function makeGhost(
+  target: "lead" | "bass", intent: string, spec: LyriaSpec, full: AudioBuffer, raw: Ghost["raw"], logIndex: number, k: number,
+  fixed?: { startSec: number; sourceBpm: number },
+): Ghost {
+  const res = cleanToGhost(raw, { bpm: project.bpm, root: project.root, role: target, bars: project.bars, ...(fixed ?? {}) });
+  return {
+    notes: res.notes, conf: confidence(res.notes, project.bars * 16), full, startSec: res.startSec, sourceBpm: res.sourceBpm, raw, ampRatio: 0.35,
+    spec, intent, explanation: "", logIndex, label: LABELS[k], proposed: res.notes.length, accepted: 0,
+  };
+}
+
+// ---------- デモモード（?demo）と書き出し（?debug） ----------
+// 実演で生成が遅れたり失敗したりしたときのために、事前に生成した提案をすぐ出せるようにする。
+// 事前生成であることは画面に明示する。
+type DemoSet = {
+  intent: string; target: "lead" | "bass"; bpm: number; root: string; createdAt: string;
+  cands: { spec: LyriaSpec; explanation: string; raw: Ghost["raw"]; startSec: number; sourceBpm: number; audio: string }[];
+};
+const params = new URLSearchParams(location.search);
+if (params.has("demo")) {
+  const btn = $<HTMLButtonElement>("demoBtn");
+  btn.hidden = false;
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try {
+      setStatus("事前に生成した提案を読み込んでいます");
+      const set = (await (await fetch(`${import.meta.env.BASE_URL}demo/set.json`)).json()) as DemoSet;
+      if (set.bpm !== project.bpm || set.root !== project.root) {
+        project.bpm = set.bpm; project.root = set.root; bpmInput.value = String(set.bpm); keySel.value = set.root; engine.setBpm(set.bpm);
+      }
+      targetSel.value = set.target;
+      intentInput.value = set.intent;
+      const fulls = await Promise.all(set.cands.map(async (c) =>
+        engine.context.decodeAudioData(await (await fetch(`${import.meta.env.BASE_URL}demo/${c.audio}`)).arrayBuffer())));
+      project.log.push({
+        at: new Date().toISOString(), track: set.target, intent: set.intent, spec: set.cands[0].spec, proposed: 0, accepted: 0, reason: "",
+        titles: set.cands.map((c, k) => `${LABELS[k]}: ${c.spec.title ?? ""}（事前生成）`),
+      });
+      const logIndex = project.log.length - 1;
+      const t = project.tracks[set.target];
+      t.alts = set.cands.map((c, k) => {
+        const g = makeGhost(set.target, set.intent, c.spec, fulls[k], c.raw, logIndex, k, { startSec: c.startSec, sourceBpm: c.sourceBpm });
+        g.explanation = c.explanation;
+        return g;
+      });
+      project.log[logIndex].proposed = Math.max(...t.alts.map((g) => g.proposed));
+      roll.track = set.target;
+      showAlt(set.target, 0);
+      setStatus(`事前に生成した2案を表示しています（${new Date(set.createdAt).toLocaleString("ja-JP")} に生成）`);
+    } catch (e) {
+      setStatus(`デモ用の提案を読み込めませんでした: ${(e as Error).message}`, true);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+if (params.has("debug")) {
+  // scripts/make-demo.mjs が、いま表示している2案をデモ用に書き出すときに使う
+  (window as unknown as { __ghostnotesExport: () => unknown }).__ghostnotesExport = () => {
+    const t = project.tracks[roll.track];
+    if (!t.alts) return null;
+    return {
+      intent: t.alts[0].intent, target: t.id, bpm: project.bpm, root: project.root, createdAt: new Date().toISOString(),
+      cands: t.alts.map((g) => ({
+        spec: g.spec, explanation: g.explanation, raw: g.raw, startSec: g.startSec, sourceBpm: g.sourceBpm,
+        wav: wavBase64(g.full),
+      })),
+    };
+  };
+}
+function wavBase64(buf: AudioBuffer): string {
+  const n = buf.length, ch = buf.numberOfChannels, sr = buf.sampleRate;
+  const out = new DataView(new ArrayBuffer(44 + n * ch * 2));
+  const w = (o: number, str: string) => { for (let i = 0; i < str.length; i++) out.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, "RIFF"); out.setUint32(4, 36 + n * ch * 2, true); w(8, "WAVE"); w(12, "fmt ");
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, ch, true); out.setUint32(24, sr, true);
+  out.setUint32(28, sr * ch * 2, true); out.setUint16(32, ch * 2, true); out.setUint16(34, 16, true); w(36, "data"); out.setUint32(40, n * ch * 2, true);
+  const data = Array.from({ length: ch }, (_, c) => buf.getChannelData(c));
+  for (let i = 0, o = 44; i < n; i++) for (let c = 0; c < ch; c++, o += 2) out.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(data[c][i] * 32767))), true);
+  const bytes = new Uint8Array(out.buffer);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
 /** 案を切り替える。採用済みの音はそのまま残り、ゴーストだけが入れ替わる */
 function showAlt(id: TrackId, k: number) {
   const t = project.tracks[id];
@@ -232,6 +314,23 @@ function reclean(ampRatio: number) {
   g.notes = res.notes;
   g.conf = confidence(g.notes, project.bars * 16);
   commit();
+}
+
+/** 1小節ぶんのゴーストをまとめて採用する（1音ずつ選ぶのが難しいとき用） */
+function acceptBar(bar: number) {
+  const g = project.tracks[roll.track].ghost;
+  if (!g) return;
+  for (const n of g.notes.filter((x) => Math.floor(x.step / 16) === bar)) onEdit("accept", roll.track, n);
+}
+function renderBarAccept() {
+  const box = $("barAccept");
+  const g = project.tracks[roll.track].ghost;
+  box.hidden = !g;
+  if (!g) return;
+  const counts = Array.from({ length: project.bars }, (_, b) => g.notes.filter((x) => Math.floor(x.step / 16) === b).length);
+  box.innerHTML = `<span class="muted">小節ごとに採用</span>` + counts.map((c, b) =>
+    `<button data-bar="${b}" ${c ? "" : "disabled"}>${b + 1}小節目${c ? `（${c}音）` : ""}</button>`).join("");
+  for (const b of box.querySelectorAll<HTMLButtonElement>("[data-bar]")) b.onclick = () => acceptBar(Number(b.dataset.bar));
 }
 
 function acceptAll() {
@@ -319,6 +418,7 @@ function confirmInline(btn: HTMLElement, msg: string) {
 
 function renderAll() {
   renderTracks();
+  renderBarAccept();
   renderGhostPanel();
   renderLog();
   renderModes();
