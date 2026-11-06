@@ -20,3 +20,16 @@ test('content extent follows notes and proposed regions, independently of the vi
  p.tracks.lead.notes=[];assert.equal(state.contentBars(p),1);
  p.tracks.lead.ghost={startStep:512,bars:4,notes:[]};assert.equal(state.contentBars(p),36);
 });
+test('loading migrates legacy synth presets and English placeholder names to SoundFont presets',()=>{
+ const p=state.demoProject();
+ p.tracks.lead={id:'lead',name:'Lead',preset:'soft',notes:[],mute:false,ghost:null};
+ p.tracks.bass={id:'bass',name:'Bass',preset:'pluck',notes:[{step:0,len:2,pitch:40,vel:.8}],mute:false,ghost:null};
+ globalThis.localStorage={getItem:()=>JSON.stringify(p)};
+ try{
+  const loaded=state.load();
+  assert.equal(loaded.tracks.lead.preset,'sf:89');
+  assert.equal(loaded.tracks.lead.name,'ピアノ');
+  assert.equal(loaded.tracks.bass.preset,'sf:45');
+  assert.equal(loaded.tracks.bass.name,'エレキベース');
+ }finally{delete globalThis.localStorage}
+});

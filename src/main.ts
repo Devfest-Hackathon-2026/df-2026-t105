@@ -1,9 +1,9 @@
 import { selectAlignedWindow } from "./core/alignment.js";
 import { mapConcurrent } from "./core/concurrency.js";
 import { notesToParts } from "./core/parts.js";
-import { midiProgram } from "./soundfont";
+import { SOUNDFONT_PRESETS, findSoundFontPreset, midiProgram, normalizePresetId, shortPresetName } from "./soundfont";
 import "./style.css";
-import { Engine, PRESETS, renderMix } from "./audio";
+import { Engine, renderMix } from "./audio";
 import { downloadBytes, encodeWav } from "./wav";
 import { cleanToGhost, estimateKey, NOTE_NAMES } from "./core/clean.js";
 import { downloadMidi, toMidiFile } from "./core/midi.js";
@@ -142,39 +142,101 @@ function renderModes() {
 }
 
 // ---------- トラック ----------
+const PRESET_GROUPS = [...new Set(SOUNDFONT_PRESETS.map((p) => p.group))];
+function renderPresetSelect(t: Project["tracks"][string]): string {
+  const role = trackRole(project, t.id);
+  const currentId = normalizePresetId(role, t.preset);
+  const groupsHtml = PRESET_GROUPS.map((group) => {
+    const opts = SOUNDFONT_PRESETS.filter((p) => p.group === group)
+      .map((p) => `<option value="${p.id}" ${p.id === currentId ? "selected" : ""}>${esc(p.name)}</option>`)
+      .join("");
+    return `<optgroup label="${esc(group)}">${opts}</optgroup>`;
+  }).join("");
+  return `<select class="preset" aria-label="${esc(t.name)} の音色 (MuseScore General)">${groupsHtml}</select>`;
+}
+
+const DEFAULT_ADD_PRESETS = ["sf:0", "sf:33", "drum:0", "sf:73", "sf:48", "sf:24", "sf:56", "sf:80"];
+$("addTrack").onclick = () => {
+  const used = new Set(Object.values(project.tracks).map((t) => normalizePresetId(trackRole(project, t.id), t.preset)));
+  const presetId = DEFAULT_ADD_PRESETS.find((id) => !used.has(id)) ?? "sf:0";
+  const preset = findSoundFontPreset("lead", presetId);
+  const baseName = shortPresetName(preset);
+  const existingNames = new Set(Object.values(project.tracks).map((t) => t.name));
+  let name = baseName;
+  for (let i = 2; existingNames.has(name); i++) name = `${baseName} ${i}`;
+  const id: TrackId = `track:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  project.tracks[id] = {
+    id,
+    name,
+    role: preset.role,
+    instrument: preset.instrument,
+    preset: preset.id,
+    polyphonic: true,
+    notes: [],
+    mute: false,
+    ghost: null,
+  };
+  roll.track = id;
+  targetSel.value = id;
+  commit();
+};
+
 function renderTracks() {
   const box = $("tracks");
   const targetControl=$<HTMLSelectElement>("target");const selectedTarget=targetControl.value;
   targetControl.innerHTML=Object.values(project.tracks).map((t)=>`<option value="${t.id}">${esc(t.name)}</option>`).join("");
   targetControl.value=project.tracks[selectedTarget as TrackId]?selectedTarget:Object.keys(project.tracks)[0];
   box.innerHTML = "";
+  const canDelete = Object.keys(project.tracks).length > 1;
   for (const t of Object.values(project.tracks)) {
+    const role = trackRole(project, t.id);
+    t.preset = normalizePresetId(role, t.preset);
     const row = document.createElement("div");
     row.className = "track" + (roll.track === t.id ? " selected" : "");
-    row.style.setProperty("--tc", `var(--track-${trackRole(project,t.id)})`);
-    const presets = trackRole(project,t.id) === "drums" ? null : PRESETS[trackRole(project,t.id) as "lead" | "bass"];
-    if(presets && t.preset && !presets.some((p)=>p.id===t.preset)) presets.push({id:t.preset,name:t.name});
-    const presetSel = presets
-      ? `<select class="preset" aria-label="${t.name} の音色">${presets.map((p) => `<option value="${p.id}" ${p.id === (t.preset ?? presets[0].id) ? "selected" : ""}>${p.name}</option>`).join("")}</select>`
-      : `<span class="hint preset">ドラムキット</span>`;
+    row.style.setProperty("--tc", `var(--track-${role})`);
+    const presetSel = renderPresetSelect(t);
     const ghost = t.ghost ? `<span class="ghost-badge" title="提案があります" aria-label="提案あり"></span>` : "";
+    const delBtn = canDelete ? `<button class="track-del" aria-label="${esc(t.name)}を削除" title="${esc(t.name)}を削除">×</button>` : "";
     row.innerHTML = `<span class="dot"></span>
-      <button class="track-name" title="${t.name} をエディタで開く">${t.name}<span class="count">${t.notes.length}音</span>${ghost}</button>
+      <button class="track-name" title="${esc(t.name)} をエディタで開く">${esc(t.name)}<span class="count">${t.notes.length}音</span>${ghost}</button>
       <button class="solo" aria-label="${esc(t.name)}をソロ" aria-pressed="${!!t.solo}" title="ソロ（このトラックだけ鳴らす）">S</button>
       <button class="mute" aria-label="${esc(t.name)}をミュート" aria-pressed="${t.mute}" title="ミュート">M</button>
+      ${delBtn}
       <canvas class="clip" aria-hidden="true"></canvas>
-      <input class="vol" type="range" min="-24" max="6" step="1" value="${t.volume ?? 0}" aria-label="${t.name} の音量" title="音量 ${t.volume ?? 0} dB" />
+      <input class="vol" type="range" min="-24" max="6" step="1" value="${t.volume ?? 0}" aria-label="${esc(t.name)} の音量" title="音量 ${t.volume ?? 0} dB" />
       ${presetSel}`;
-    const select = () => { showMobilePane("editor");roll.track = t.id; if (t.id !== "drums" || targetSel.querySelector('option[value="drums"]')) targetSel.value = t.id; renderAll(); };
+    const select = () => { showMobilePane("editor");roll.track = t.id; targetSel.value = t.id; renderAll(); };
     row.querySelector<HTMLButtonElement>(".track-name")!.onclick = select;
     row.querySelector<HTMLCanvasElement>(".clip")!.onclick = select;
     row.querySelector<HTMLButtonElement>(".mute")!.onclick = () => { t.mute = !t.mute; commit(); };
     row.querySelector<HTMLButtonElement>(".solo")!.onclick = () => { t.solo = !t.solo; commit(); };
+    const del = row.querySelector<HTMLButtonElement>(".track-del");
+    if (del) {
+      del.onclick = () => {
+        if (Object.keys(project.tracks).length <= 1) return;
+        delete project.tracks[t.id];
+        delete comps[t.id];
+        if (!project.tracks[roll.track]) roll.track = Object.keys(project.tracks)[0] as TrackId;
+        commit();
+      };
+    }
     const volIn = row.querySelector<HTMLInputElement>(".vol")!;
     volIn.oninput = () => { t.volume = Number(volIn.value); volIn.title = `音量 ${t.volume} dB`; engine.applyTrackSettings(); };
     volIn.onchange = () => commit();
-    const ps = row.querySelector<HTMLSelectElement>("select.preset");
-    if (ps) ps.onchange = () => { t.preset = ps.value; commit(); };
+    const ps = row.querySelector<HTMLSelectElement>("select.preset")!;
+    ps.onchange = () => {
+      const prevPreset = findSoundFontPreset(role, t.preset);
+      const nextPreset = findSoundFontPreset(role, ps.value);
+      const prevShort = shortPresetName(prevPreset);
+      if (t.name === prevShort || t.name === prevPreset.name || ["生成先", "Lead", "Bass", "Drums", "ドラム"].includes(t.name)) {
+        t.name = shortPresetName(nextPreset);
+      }
+      t.preset = nextPreset.id;
+      t.role = nextPreset.role;
+      t.instrument = nextPreset.instrument;
+      t.polyphonic = true;
+      commit();
+    };
     box.appendChild(row);
     drawClip(row.querySelector<HTMLCanvasElement>(".clip")!, t.id);
   }
@@ -419,11 +481,11 @@ askBtn.onclick = async () => {
         if(!primary)throw new Error("対象のトラックに対応する音を拾えませんでした。原音を確認してください");
         for(const part of parts)for(const note of part.notes)note.step+=startStep;
         const g:Ghost={startStep,bars:generationBars,notes:primary.notes,conf:primary.notes.map(()=>.5),polyphonic:true,full:fulls[k],startSec:clock.startSec+clock.onsetDelay,sourceBpm:clock.sourceBpm,transpose:prior.transpose,raw:raw.filter((n)=>n.instrument===primary.instrument),ampRatio:0,spec:specs[k],intent,explanation:"",logIndex,label:LABELS[k],proposed:primary.notes.length,accepted:0,model:"MuScriptor"};
-        t.polyphonic=true;t.instrument=primary.instrument;t.role=primary.role;t.name=primary.name;t.preset=`sf:${primary.program}`;
+        t.polyphonic=true;t.instrument=primary.instrument;t.role=primary.role;t.name=primary.name;t.preset=primary.role==="drums"?"drum:0":`sf:${primary.program}`;
         t.alts!.push(g);touched.add(targetId);
         for(const part of parts.filter(p=>p!==primary)) {
           const id:TrackId=Object.values(project.tracks).find(track=>track.id!==targetId&&track.instrument===part.instrument)?.id??`part:${part.instrument}`;
-          const track=project.tracks[id]??={id,name:part.name,role:part.role,instrument:part.instrument,preset:`sf:${part.program}`,polyphonic:true,notes:[],mute:false,ghost:null};
+          const track=project.tracks[id]??={id,name:part.name,role:part.role,instrument:part.instrument,preset:part.role==="drums"?"drum:0":`sf:${part.program}`,polyphonic:true,notes:[],mute:false,ghost:null};
           if(!touched.has(id))track.alts=[];
           const other:Ghost={...g,notes:part.notes,conf:part.notes.map(()=>.5),raw:raw.filter(n=>n.instrument===part.instrument),proposed:part.notes.length};
           track.alts!.push(other);if(!touched.has(id))track.ghost=other;touched.add(id);

@@ -1,6 +1,6 @@
 export type Note = { step: number; len: number; pitch: number; vel: number };
 export type TrackRole = "drums" | "bass" | "lead";
-export type TrackId = TrackRole | `part:${string}`;
+export type TrackId = TrackRole | `part:${string}` | `track:${string}`;
 export type Ghost = {
   notes: Note[];
   /** 2小節後にも同じ音が出ていれば高い（0〜1）。耳コピの確からしさの目安 */
@@ -145,8 +145,16 @@ function legacyDemoProject(): Project {
 
 /** Start without an unrelated backing arrangement; the target becomes a detected instrument. */
 export function demoProject(): Project {
-  return { bpm:100, root:"C", bars:4, tracks:{lead:{id:"lead",name:"生成先",notes:[],mute:false,ghost:null}}, log:[] };
+  return { bpm:100, root:"C", bars:4, tracks:{lead:{id:"lead",name:"ピアノ",role:"lead",instrument:"acoustic_piano",preset:"sf:0",polyphonic:true,notes:[],mute:false,ghost:null}}, log:[] };
 }
+
+const LEGACY_PRESET_MIGRATION: Record<string, string> = {
+  square: "sf:80",
+  saw: "sf:81",
+  soft: "sf:89",
+  pluck: "sf:45",
+  sub: "sf:38",
+};
 
 const KEY = "ghostnotes.project.v1";
 export function save(p: Project) {
@@ -170,6 +178,14 @@ export function load(): Project | null {
     for (const id of ["drums","bass"] as const) {
       const t=project.tracks[id];
       if(t&&!t.instrument&&t.name===legacy.tracks[id].name&&JSON.stringify(t.notes)===JSON.stringify(legacy.tracks[id].notes))delete project.tracks[id];
+    }
+    for (const t of Object.values(project.tracks)) {
+      if (t.preset && LEGACY_PRESET_MIGRATION[t.preset]) t.preset = LEGACY_PRESET_MIGRATION[t.preset];
+      const role = t.role ?? (t.id === "drums" || t.id === "bass" ? t.id : "lead");
+      if (!t.preset) t.preset = role === "drums" ? "drum:0" : role === "bass" ? "sf:33" : "sf:0";
+      if (t.name === "Lead" || t.name === "生成先") t.name = t.preset === "sf:73" ? "フルート" : "ピアノ";
+      else if (t.name === "Drums") t.name = "ドラム";
+      else if (t.name === "Bass") t.name = "エレキベース";
     }
     return project;
   } catch {
@@ -229,10 +245,16 @@ export function describeForLyria(p: Project, target: TrackId): string {
   return `The new part plays together with this existing loop (${unit}): ${parts.join("; ")}. Make it fit around them.`;
 }
 
-export function trackRole(p: Project, id: TrackId): TrackRole { return p.tracks[id]?.role ?? (id === "drums" || id === "bass" ? id : "lead"); }
+export function trackRole(p: Project, id: TrackId): TrackRole {
+  const t = p.tracks[id];
+  if (t?.preset?.startsWith("drum:")) return "drums";
+  return t?.role ?? (id === "drums" || id === "bass" ? id : "lead");
+}
 export function trackRange(p: Project, id: TrackId): [number,number] {
-  if(!id.startsWith("part:")&&!p.tracks[id].polyphonic)return RANGE[trackRole(p,id)];
-  const notes = [...p.tracks[id].notes, ...(p.tracks[id].ghost?.notes ?? [])];
+  const t = p.tracks[id];
+  if(!t)return RANGE.lead;
+  if(!id.startsWith("part:")&&!id.startsWith("track:")&&!t.polyphonic)return RANGE[trackRole(p,id)];
+  const notes = [...t.notes, ...(t.ghost?.notes ?? [])];
   const fallback = RANGE[trackRole(p,id)];
   return notes.length ? [Math.max(0,Math.min(fallback[0],...notes.map((n)=>n.pitch))-2),Math.min(127,Math.max(fallback[1],...notes.map((n)=>n.pitch))+2)] : fallback;
 }

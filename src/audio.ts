@@ -1,102 +1,14 @@
 import { trackRole, type TrackRole } from "./state";
 import * as Tone from "tone";
-import { SoundFontPlayer, programFor, renderSoundFont } from "./soundfont";
+import { SOUNDFONT_PRESETS, SoundFontPlayer, renderSoundFont } from "./soundfont";
 import type { Note, Project, Track, TrackId } from "./state";
 
-// 音色の候補。トラックの preset にこの名前を入れる
-export const PRESETS: Record<"lead" | "bass", { id: string; name: string }[]> = {
-  lead: [
-    { id: "sf:73", name: "フルート" },
-    { id: "sf:0", name: "ピアノ" },
-    { id: "sf:12", name: "マリンバ" },
-    { id: "sf:80", name: "シンセリード" },
-    { id: "square", name: "矩形波" },
-    { id: "saw", name: "ノコギリ波" },
-    { id: "soft", name: "やわらかい" },
-    { id: "pluck", name: "はじく" },
-  ],
-  bass: [
-    { id: "sf:33", name: "指弾きベース" },
-    { id: "sf:32", name: "コントラバス" },
-    { id: "sf:38", name: "シンセベース" },
-    { id: "saw", name: "ノコギリ波" },
-    { id: "sub", name: "サブベース" },
-    { id: "pluck", name: "はじく" },
-  ],
+// MuseScore General SoundFont 準拠の音色一覧
+export const PRESETS: Record<TrackRole, { id: string; name: string }[]> = {
+  lead: SOUNDFONT_PRESETS.filter((p) => p.role === "lead").map(({ id, name }) => ({ id, name })),
+  bass: SOUNDFONT_PRESETS.filter((p) => p.role === "bass").map(({ id, name }) => ({ id, name })),
+  drums: SOUNDFONT_PRESETS.filter((p) => p.role === "drums").map(({ id, name }) => ({ id, name })),
 };
-
-type Instruments = {
-  kick: Tone.MembraneSynth;
-  snare: Tone.NoiseSynth;
-  hat: Tone.MetalSynth;
-  bass: Tone.MonoSynth;
-  lead: Tone.PolySynth;
-  ghost: Tone.PolySynth;
-  channels: Record<TrackRole | "ghost", Tone.Channel>;
-  dispose: () => void;
-};
-
-type SynthOpts = NonNullable<ConstructorParameters<typeof Tone.Synth>[0]>;
-type MonoOpts = NonNullable<ConstructorParameters<typeof Tone.MonoSynth>[0]>;
-
-function leadOptions(preset: string): SynthOpts {
-  switch (preset) {
-    case "saw":
-      return { oscillator: { type: "sawtooth" } as never, envelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.25 }, volume: -20 };
-    case "soft":
-      return { oscillator: { type: "triangle" } as never, envelope: { attack: 0.06, decay: 0.3, sustain: 0.6, release: 0.5 }, volume: -12 };
-    case "pluck":
-      return { oscillator: { type: "square4" } as never, envelope: { attack: 0.002, decay: 0.18, sustain: 0, release: 0.1 }, volume: -14 };
-    default:
-      return { oscillator: { type: "square8" } as never, envelope: { attack: 0.01, decay: 0.2, sustain: 0.4, release: 0.2 }, volume: -18 };
-  }
-}
-function bassOptions(preset: string): MonoOpts {
-  switch (preset) {
-    case "sub":
-      return { oscillator: { type: "sine" } as never, filter: { Q: 0.5, type: "lowpass" }, filterEnvelope: { attack: 0.005, decay: 0.1, sustain: 1, baseFrequency: 400, octaves: 0 }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.8, release: 0.12 }, volume: -6 };
-    case "pluck":
-      return { oscillator: { type: "square" } as never, filter: { Q: 3, type: "lowpass" }, filterEnvelope: { attack: 0.002, decay: 0.12, sustain: 0, baseFrequency: 150, octaves: 3 }, envelope: { attack: 0.002, decay: 0.25, sustain: 0.1, release: 0.08 }, volume: -10 };
-    default:
-      return { oscillator: { type: "sawtooth" } as never, filter: { Q: 2, type: "lowpass" }, filterEnvelope: { attack: 0.005, decay: 0.15, sustain: 0.2, baseFrequency: 120, octaves: 2.5 }, envelope: { attack: 0.005, decay: 0.2, sustain: 0.6, release: 0.1 }, volume: -10 };
-  }
-}
-
-/** 楽器一式を、いまのコンテキスト（通常再生なら画面のもの、書き出しならオフラインのもの）に作る */
-function makeInstruments(p: Project, out: Tone.InputNode): Instruments {
-  const ch = (t?: Track) => new Tone.Channel({ volume: t?.volume ?? 0 }).connect(out);
-  const channels = { drums: ch(p.tracks.drums), bass: ch(p.tracks.bass), lead: ch(p.tracks.lead), ghost: ch() };
-  const kick = new Tone.MembraneSynth({ volume: -4 }).connect(channels.drums);
-  const snare = new Tone.NoiseSynth({ envelope: { attack: 0.001, decay: 0.15, sustain: 0 }, volume: -12 }).connect(channels.drums);
-  const hat = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.05, release: 0.01 }, volume: -26 }).connect(channels.drums);
-  const bass = new Tone.MonoSynth(bassOptions(p.tracks.bass?.preset ?? "saw")).connect(channels.bass);
-  const lead = new Tone.PolySynth(Tone.Synth, leadOptions(p.tracks.lead?.preset ?? "square")).connect(channels.lead);
-  const ghost = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: "triangle" } as never,
-    envelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.2 },
-    volume: -12,
-  }).connect(channels.ghost);
-  return {
-    kick, snare, hat, bass, lead, ghost, channels,
-    dispose: () => { for (const x of [kick, snare, hat, bass, lead, ghost, ...Object.values(channels)]) x.dispose(); },
-  };
-}
-
-/** 1音を鳴らす（通常再生と書き出しで共通） */
-function trigger(ins: Instruments, id: TrackId, n: Note, time: number, sixteenth: number, ghost: boolean) {
-  const dur = n.len * sixteenth * 0.95;
-  const v = 0.3 + 0.7 * n.vel;
-  if (id === "drums") {
-    if (n.pitch === 36) ins.kick.triggerAttackRelease("C1", "8n", time, v);
-    else if (n.pitch === 38) ins.snare.triggerAttackRelease("16n", time, v);
-    else ins.hat.triggerAttackRelease("C6", "32n", time, v);
-  } else {
-    const f = Tone.Frequency(n.pitch, "midi").toFrequency();
-    if (ghost) ins.ghost.triggerAttackRelease(f, dur, time, v);
-    else if (id === "bass") ins.bass.triggerAttackRelease(f, dur, time, v);
-    else ins.lead.triggerAttackRelease(f, dur, time, v);
-  }
-}
 
 /** ソロのトラックがあればそれだけ、なければミュートしていないトラックを鳴らす */
 export function audibleTracks(p: Project): Track[] {
@@ -105,11 +17,9 @@ export function audibleTracks(p: Project): Track[] {
   return (solo.length ? solo : all).filter((t) => !t.mute);
 }
 
-/** 再生エンジン。16分ごとに今の状態を読んで鳴らすので、編集のたびに組み直す必要がない */
+/** 再生エンジン。MuseScore General SoundFont で全トラックを鳴らす */
 export class Engine {
-  private ins: Instruments;
   private soundfont = new SoundFontPlayer();
-  private presetKey = "";
   private loopToContent = true;
   private lyria: Tone.Player | null = null;
   private shifter: Tone.PitchShift | null = null;
@@ -120,25 +30,12 @@ export class Engine {
   onStep: (step: number) => void = () => {};
 
   constructor(private get: () => Project) {
-    this.ins = makeInstruments(get(), Tone.getDestination());
-    this.presetKey = this.keyOf(get());
     Tone.getTransport().scheduleRepeat((time) => this.tick(time), "16n");
   }
 
-  private keyOf(p: Project) {
-    return `${p.tracks.lead?.preset ?? "square"}/${p.tracks.bass?.preset ?? "saw"}`;
-  }
-
-  /** 音量と音色の変更を反映する。音色が変わったときだけ楽器を作り直す */
+  /** 音量と音色の変更を反映する */
   applyTrackSettings() {
-    const p = this.get();
-    const key = this.keyOf(p);
-    if (key !== this.presetKey) {
-      this.ins.dispose();
-      this.ins = makeInstruments(p, Tone.getDestination());
-      this.presetKey = key;
-    }
-    for (const id of ["drums", "bass", "lead"] as TrackRole[]) this.ins.channels[id].volume.value = p.tracks[id]?.volume ?? 0;
+    void this.soundfont.ready(Object.values(this.get().tracks)).catch(() => {});
   }
 
   private tick(time: number) {
@@ -154,7 +51,7 @@ export class Engine {
   }
 
   private trigger(t: Track, n: Note, time: number, sixteenth: number, ghost: boolean) {
-    if (!this.soundfont.play(t, n, time, n.len * sixteenth * 0.95, ghost)) trigger(this.ins, trackRole(this.get(),t.id), n, time, sixteenth, ghost);
+    this.soundfont.play(t, n, time, n.len * sixteenth * 0.95, ghost);
   }
 
   /**
@@ -231,28 +128,20 @@ export class Engine {
 }
 
 /**
- * 採用済みの音（ゴーストは含めない）を、ループ回数ぶんオフラインで書き出す。
+ * 採用済みの音（ゴーストは含めない）を、ループ回数ぶん MuseScore General SoundFont で書き出す。
  * 最後に 1.5 秒の余韻を足す。
  */
 export async function renderMix(p: Project, loops = 2): Promise<AudioBuffer> {
   const sixteenth = 60 / p.bpm / 4;
   const loopSec = sixteenth * 16 * p.bars;
   const tail = 1.5;
-  const sfTracks = audibleTracks(p).filter((t) => programFor(trackRole(p,t.id), t.preset) !== null);
-  const sf = sfTracks.length ? await renderSoundFont(p, sfTracks, loops, loopSec * loops + tail) : null;
-  const rendered = await Tone.Offline(() => {
-    const master = new Tone.Gain(0.9).toDestination();
-    const ins = makeInstruments(p, master);
-    for (let k = 0; k < loops; k++) {
-      for (const t of audibleTracks(p)) {
-        for (const n of t.notes.filter((n) => n.step < p.bars * 16 && programFor(trackRole(p,t.id), t.preset) === null)) trigger(ins, trackRole(p,t.id), n, k * loopSec + n.step * sixteenth, sixteenth, false);
-      }
-    }
-  }, loopSec * loops + tail, 2, 44100);
-  const result = rendered.get() as AudioBuffer;
-  if (sf) for (let ch = 0; ch < 2; ch++) {
-    const dst = result.getChannelData(ch), src = sf.getChannelData(ch);
-    for (let i = 0; i < dst.length; i++) dst[i] += src[i] * 0.9;
+  const duration = loopSec * loops + tail;
+  const tracks = audibleTracks(p);
+  if (!tracks.length) return new AudioBuffer({ numberOfChannels: 2, length: Math.ceil(duration * 44100), sampleRate: 44100 });
+  const sf = await renderSoundFont(p, tracks, loops, duration);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = sf.getChannelData(ch);
+    for (let i = 0; i < data.length; i++) data[i] *= 0.9;
   }
-  return result;
+  return sf;
 }
