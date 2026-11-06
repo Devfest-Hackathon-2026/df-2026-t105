@@ -29,6 +29,7 @@ function safeSet(k: string, v: string) { try { localStorage.setItem(k, v); } cat
 const playBtn = $<HTMLButtonElement>("play");
 playBtn.onclick = async () => {
   const willPlay = !engine.playing;
+  stopPreview();
   if (willPlay) await engine.start();
   else engine.stop();
   playBtn.textContent = willPlay ? "■ 停止" : "▶ 再生";
@@ -249,6 +250,8 @@ askBtn.onclick = async () => {
       ));
       fulls = res.map((r) => r.buffer);
       console.info("作曲に使ったモデル:", res.map((r) => r.model));
+      // 耳コピには1分以上かかるので、その間に案A の原音を流しておく（最大30秒、途中で再生を始めたら止める）
+      if (monitorChk.checked) previewWhileWaiting(fulls[0]);
       if (res.some((r) => /\[[^\]]*\]\s*[^\[\s]/.test(r.text.replace(/\[\[[^\]]*\]\]/g, "")))) console.warn("歌詞らしきテキストが返った:", res.map((r) => r.text));
     }
 
@@ -294,6 +297,25 @@ askBtn.onclick = async () => {
 };
 
 const LABELS = ["A", "B", "C"];
+
+let preview: AudioBufferSourceNode | null = null;
+function previewWhileWaiting(buf: AudioBuffer) {
+  stopPreview();
+  const ctx = engine.context;
+  void ctx.resume();
+  const src = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  gain.gain.value = 0.7;
+  src.buffer = buf;
+  src.connect(gain).connect(ctx.destination);
+  src.start(ctx.currentTime + 0.05, 0, Math.min(30, buf.duration));
+  src.onended = () => { if (preview === src) preview = null; };
+  preview = src;
+}
+function stopPreview() {
+  try { preview?.stop(); } catch {}
+  preview = null;
+}
 
 /**
  * ドラムのゴーストを作る（試験的）。Lyria にドラムだけを叩かせ、帯域ごとの音の立ち上がりから
