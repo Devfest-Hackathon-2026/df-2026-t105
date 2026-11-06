@@ -16,7 +16,7 @@ INSTRUMENTS = {
     "square_D120": "synth_lead", "marimba_C100": "chromatic_percussion",
     "ebass_F110": "electric_bass", "uprightbass_D120": "acoustic_bass", "synthbass_C100": "electric_bass",
 }
-MODELS = sys.argv[1:] or ["small", "medium", "large"]
+MODELS = [a for a in sys.argv[1:] if a in ("small", "medium", "large")] or ["small", "medium", "large"]
 
 def sh(*args):
     print("+", " ".join(args), flush=True)
