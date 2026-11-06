@@ -1,6 +1,7 @@
 import "./style.css";
 import { Engine } from "./audio";
 import { cleanToGhost, NOTE_NAMES } from "./core/clean.js";
+import { downloadMidi, toMidiFile } from "./core/midi.js";
 import { explainGhost, intentToSpecs } from "./gemini";
 import { generate, slice } from "./lyria";
 import { Roll } from "./roll";
@@ -50,6 +51,24 @@ $("reset").onclick = () => {
   bpmInput.value = String(project.bpm);
   keySel.value = project.root;
   commit();
+};
+
+// 採用済みの音だけを書き出す（ゴーストは含めない）。GM の音色番号: 38 = Synth Bass 1、80 = Lead 1 (square)
+$("exportMidi").onclick = () => {
+  const tr = project.tracks;
+  const bytes = toMidiFile(
+    [
+      { name: "Drums", channel: 9, notes: tr.drums.notes },
+      { name: "Bass", channel: 1, program: 38, notes: tr.bass.notes },
+      { name: "Lead", channel: 0, program: 80, notes: tr.lead.notes },
+    ],
+    { bpm: project.bpm },
+  );
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  downloadMidi(bytes, `ghostnotes-${stamp}.mid`);
+  setStatus("採用済みの音を MIDI に書き出しました（ゴーストは含みません）");
 };
 
 // A/B

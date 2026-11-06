@@ -27,4 +27,12 @@ await page.fill("#reason", "前半は案A のフルートの音の流れ、最�
 await page.click("#close");
 console.log("log:", (await page.textContent("#log"))?.replace(/\s+/g, " "));
 await page.screenshot({ path: `${outDir}/2-after.png` });
+// 採用した音を MIDI に書き出す
+const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#exportMidi")]);
+const path = `${outDir}/${dl.suggestedFilename()}`;
+await dl.saveAs(path);
+const { readFileSync } = await import("node:fs");
+const b = readFileSync(path);
+const noteOns = [...b].filter((x, i) => (x & 0xf0) === 0x90 && i > 14).length;
+console.log("midi:", dl.suggestedFilename(), b.length, "bytes", b.subarray(0, 4).toString(), "ntrks", b.readUInt16BE(10), "note-on bytes ~", noteOns);
 await browser.close();
