@@ -320,3 +320,5 @@ input[type="checkbox"] { accent-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+#previewAudio { width: 100%; height: 38px; }

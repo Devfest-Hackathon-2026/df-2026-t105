@@ -225,7 +225,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req, 20 * 1024 * 1024);
       if (!body) { res.writeHead(413).end(); return; }
       try {
-        const job = transcriptionJobs.create(body, { backend: url.searchParams.get("backend") ?? "a100", instruments: (url.searchParams.get("instruments") ?? "").split(",").filter(Boolean) });
+        const job = transcriptionJobs.create(body, { backend: url.searchParams.get("backend") ?? "cpu", detectTempo: url.searchParams.get("grid") === "1", instruments: (url.searchParams.get("instruments") ?? "").split(",").filter(Boolean) });
         res.writeHead(202, { "Content-Type": "application/json" }).end(JSON.stringify(job));
       } catch(e) { res.writeHead(429).end(e.message); }
       return;
@@ -259,7 +259,7 @@ server.on("upgrade", (req, socket, head) => {
   const m = MUSIC_PATH.exec((req.url ?? "").split("?")[0]);
   const ip = clientIp(req);
   if (!m || !KEY) { socket.destroy(); return; }
-  if ((open.get(ip) ?? 0) >= 2 || !allow(ip, "music")) {
+  if ((open.get(ip) ?? 0) >= 4 || !allow(ip, "music")) {
     socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
     socket.destroy();
     return;

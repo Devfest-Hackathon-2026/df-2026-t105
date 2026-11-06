@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import ts from 'typescript';
+const source=ts.transpileModule(readFileSync(new URL('../src/state.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText;
+const state=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+test('new projects have an empty target without unrelated demo accompaniment',()=>{
+ const p=state.demoProject();assert.deepEqual(Object.keys(p.tracks),['lead']);assert.deepEqual(p.tracks.lead.notes,[]);
+});
+test('loading removes exact demo backing while preserving edited and detected tracks',()=>{
+ const drums=[];for(let s=0;s<64;s++){if(s%4===0)drums.push({step:s,len:1,pitch:36,vel:.9});if(s%8===4)drums.push({step:s,len:1,pitch:38,vel:.8});if(s%2===0)drums.push({step:s,len:1,pitch:42,vel:s%4===2?.6:.35})}
+ const p=state.demoProject();p.tracks.drums={id:'drums',name:'Drums',notes:drums};p.tracks.bass={id:'bass',name:'Bass',notes:[{step:0,len:3,pitch:40,vel:.8}]};p.tracks['part:drums']={id:'part:drums',name:'ドラム',instrument:'drums',notes:drums};
+ globalThis.localStorage={getItem:()=>JSON.stringify(p)};
+ try{const loaded=state.load();assert(!loaded.tracks.drums);assert.deepEqual(loaded.tracks.bass.notes,p.tracks.bass.notes);assert(loaded.tracks['part:drums']);}finally{delete globalThis.localStorage}
+});

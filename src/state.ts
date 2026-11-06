@@ -36,6 +36,7 @@ export type Track = {
   name: string;
   role?: TrackRole;
   instrument?: string;
+  polyphonic?: boolean;
   notes: Note[];
   mute: boolean;
   /** ソロ。どれかのトラックがソロなら、ソロのトラックだけを鳴らす */
@@ -76,7 +77,7 @@ export type Project = {
   bpm: number;
   root: string;
   bars: number;
-  tracks: Record<TrackId, Track>;
+  tracks: Record<string, Track>;
   log: LogEntry[];
 };
 
@@ -92,7 +93,7 @@ export const RANGE: Record<TrackRole, [number, number]> = {
   lead: [57, 84],
 };
 
-export function demoProject(): Project {
+function legacyDemoProject(): Project {
   const drums: Note[] = [];
   for (let s = 0; s < 64; s++) {
     if (s % 4 === 0) drums.push({ step: s, len: 1, pitch: 36, vel: 0.9 });
@@ -122,6 +123,11 @@ export function demoProject(): Project {
   };
 }
 
+/** Start without an unrelated backing arrangement; the target becomes a detected instrument. */
+export function demoProject(): Project {
+  return { bpm:100, root:"C", bars:4, tracks:{lead:{id:"lead",name:"生成先",notes:[],mute:false,ghost:null}}, log:[] };
+}
+
 const KEY = "ghostnotes.project.v1";
 export function save(p: Project) {
   try {
@@ -137,7 +143,15 @@ export function save(p: Project) {
 export function load(): Project | null {
   try {
     const s = localStorage.getItem(KEY);
-    return s ? (JSON.parse(s) as Project) : null;
+    if (!s) return null;
+    const project = JSON.parse(s) as Project;
+    const legacy = legacyDemoProject();
+    // Remove only the exact untouched demo backing, never edited or transcribed parts.
+    for (const id of ["drums","bass"] as const) {
+      const t=project.tracks[id];
+      if(t&&!t.instrument&&t.name===legacy.tracks[id].name&&JSON.stringify(t.notes)===JSON.stringify(legacy.tracks[id].notes))delete project.tracks[id];
+    }
+    return project;
   } catch {
     return null;
   }
@@ -197,7 +211,7 @@ export function describeForLyria(p: Project, target: TrackId): string {
 
 export function trackRole(p: Project, id: TrackId): TrackRole { return p.tracks[id]?.role ?? (id === "drums" || id === "bass" ? id : "lead"); }
 export function trackRange(p: Project, id: TrackId): [number,number] {
-  if(!id.startsWith("part:"))return RANGE[trackRole(p,id)];
+  if(!id.startsWith("part:")&&!p.tracks[id].polyphonic)return RANGE[trackRole(p,id)];
   const notes = [...p.tracks[id].notes, ...(p.tracks[id].ghost?.notes ?? [])];
   const fallback = RANGE[trackRole(p,id)];
   return notes.length ? [Math.max(0,Math.min(fallback[0],...notes.map((n)=>n.pitch))-2),Math.min(127,Math.max(fallback[1],...notes.map((n)=>n.pitch))+2)] : fallback;

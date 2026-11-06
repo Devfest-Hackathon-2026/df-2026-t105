@@ -64,11 +64,10 @@
           <summary aria-label="設定" title="設定"><svg><use href="#i-gear" /></svg></summary>
           <div class="settings-body">
             <label class="stack">Gemini API キー<input id="apiKey" type="password" autocomplete="off" /></label>
-            <label class="stack">生成する案<select id="candidateCount"><option value="1">1案</option><option value="2">2案</option></select></label>
             <label class="stack">耳コピ<select id="transcriber"><option value="a100">MuScriptor medium（A100）</option><option value="cpu">MuScriptor（CPU）</option><option value="browser">Basic Pitch（補助）</option></select></label>
             <a href="/compare/">試聴比較</a>
             <a href="/soundfonts/LICENSE-MuseScore-General.txt" target="_blank" rel="noopener">音源: MuseScore General</a>
-            <button id="reset" class="text-btn">デモ曲に戻す</button>
+            <button id="reset" class="text-btn">曲を空にする</button>
           </div>
         </details>
       </header>
@@ -113,7 +112,13 @@
                 <option value="realtime">Lyria RealTime</option>
               </select>
             </div>
-            <label class="check"><input id="monitor" type="checkbox" checked /> 待っている間に Lyria の音を聴く</label>
+            <div class="row">
+              <label class="stack">生成数<select id="candidateCount"><option value="1">1案</option><option value="2">2案</option><option value="3">3案</option><option value="4">4案</option></select></label>
+              <label class="stack">同時生成数<select id="generationConcurrency"><option value="1">1（順番に生成）</option><option value="2">2並列</option><option value="3">3並列</option><option value="4">4並列</option></select></label>
+            </div>
+            <div class="row"><label class="stack">試聴する案<select id="previewTake" disabled><option value="0">案A</option></select></label><button id="previewStop" class="text-btn" disabled>試聴を停止</button></div>
+            <audio id="previewAudio" controls preload="none" aria-label="生成した原音の試聴"></audio>
+            <label class="check"><input id="monitor" type="checkbox" /> 自動試聴</label>
             <button id="ask" class="primary wide"><svg><use href="#i-spark" /></svg>生成する</button>
             <button id="demoBtn" class="text-btn wide" hidden>事前に生成した2案を出す（実演用）</button>
             <div class="progress" aria-hidden="true"><div id="progressBar"></div></div>

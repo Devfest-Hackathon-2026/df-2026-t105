@@ -1,0 +1,1 @@
+export function selectAlignedWindow(notes:{start:number;end:number}[],o:{bpm:number;bars:number;audioDuration:number;firstDownbeat?:number;onsetDelay?:number}):{startSec:number;sourceBpm:number;onsetDelay:number;completeAudio:boolean};

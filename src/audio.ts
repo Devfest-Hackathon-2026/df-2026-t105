@@ -69,8 +69,8 @@ function makeInstruments(p: Project, out: Tone.InputNode): Instruments {
   const kick = new Tone.MembraneSynth({ volume: -4 }).connect(channels.drums);
   const snare = new Tone.NoiseSynth({ envelope: { attack: 0.001, decay: 0.15, sustain: 0 }, volume: -12 }).connect(channels.drums);
   const hat = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.05, release: 0.01 }, volume: -26 }).connect(channels.drums);
-  const bass = new Tone.MonoSynth(bassOptions(p.tracks.bass.preset ?? "saw")).connect(channels.bass);
-  const lead = new Tone.PolySynth(Tone.Synth, leadOptions(p.tracks.lead.preset ?? "square")).connect(channels.lead);
+  const bass = new Tone.MonoSynth(bassOptions(p.tracks.bass?.preset ?? "saw")).connect(channels.bass);
+  const lead = new Tone.PolySynth(Tone.Synth, leadOptions(p.tracks.lead?.preset ?? "square")).connect(channels.lead);
   const ghost = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: "triangle" } as never,
     envelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.2 },
@@ -125,7 +125,7 @@ export class Engine {
   }
 
   private keyOf(p: Project) {
-    return `${p.tracks.lead.preset ?? "square"}/${p.tracks.bass.preset ?? "saw"}`;
+    return `${p.tracks.lead?.preset ?? "square"}/${p.tracks.bass?.preset ?? "saw"}`;
   }
 
   /** 音量と音色の変更を反映する。音色が変わったときだけ楽器を作り直す */
@@ -137,7 +137,7 @@ export class Engine {
       this.ins = makeInstruments(p, Tone.getDestination());
       this.presetKey = key;
     }
-    for (const id of ["drums", "bass", "lead"] as TrackRole[]) this.ins.channels[id].volume.value = p.tracks[id].volume ?? 0;
+    for (const id of ["drums", "bass", "lead"] as TrackRole[]) this.ins.channels[id].volume.value = p.tracks[id]?.volume ?? 0;
   }
 
   private tick(time: number) {

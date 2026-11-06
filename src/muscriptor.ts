@@ -6,8 +6,8 @@ import { encodeMonoWav } from "./wav";
 export type MusNote = { pitch: number; start: number; end: number; instrument: string };
 
 /** 中継サーバー経由で muscriptor に採譜を頼む（サーバーに MUSCRIPTOR_URL が設定されているときだけ使える） */
-export async function transcribeWithMuscriptor(mono: Float32Array, sampleRate: number, instruments: string[], backend: "cpu" | "a100" = "cpu", onStatus: (text: string) => void = () => {}): Promise<MusNote[]> {
-  const r = await fetch(`${location.origin}/api/transcription-jobs?instruments=${encodeURIComponent(instruments.join(","))}&backend=${backend}`, {
+export async function transcribeWithMuscriptorDetailed(mono: Float32Array, sampleRate: number, instruments: string[], backend: "cpu" | "a100" = "cpu", onStatus: (text: string) => void = () => {}): Promise<{notes:MusNote[];beatGrid?:{bpm:number;first_downbeat:number;onset_delay?:number;beats_per_bar?:number;steady?:boolean}}> {
+  const r = await fetch(`${location.origin}/api/transcription-jobs?instruments=${encodeURIComponent(instruments.join(","))}&backend=${backend}&grid=1`, {
     method: "POST", headers: { "Content-Type": "audio/wav" }, body: encodeMonoWav(mono, sampleRate),
   });
   if (!r.ok) throw new Error(`採譜ジョブを開始できませんでした（${r.status}）: ${(await r.text()).slice(0, 200)}`);
@@ -18,13 +18,15 @@ export async function transcribeWithMuscriptor(mono: Float32Array, sampleRate: n
     const response = await fetch(`${location.origin}/api/transcription-jobs/${id}`, { cache: "no-store" });
     if (!response.ok) throw new Error("採譜ジョブの状態を確認できませんでした");
     const job = await response.json();
-    if (job.status === "done") return muscriptorNotes(job.events);
+    if (job.status === "done") return {notes:muscriptorNotes(job.events),beatGrid:job.beatGrid};
     if (job.status === "error") throw new Error(job.error);
     onStatus(phases[job.phase] ?? phases[job.status] ?? "採譜しています");
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error("採譜ジョブが時間内に完了しませんでした。サーバーを確認してください");
 }
+
+export async function transcribeWithMuscriptor(mono:Float32Array,sampleRate:number,instruments:string[],backend:"cpu"|"a100"="cpu") { return (await transcribeWithMuscriptorDetailed(mono,sampleRate,instruments,backend)).notes; }
 
 /** GM のドラムの音番号を、Ghostnotes の3つの行（キック 36、スネア 38、ハイハット 42）にまとめる */
 function drumRow(p: number): number | null {
