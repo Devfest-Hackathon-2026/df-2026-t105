@@ -378,7 +378,7 @@ function makeGhost(
 // 事前生成であることは画面に明示する。
 type DemoSet = {
   intent: string; target: "lead" | "bass"; bpm: number; root: string; createdAt: string;
-  cands: { spec: LyriaSpec; explanation: string; raw: Ghost["raw"]; startSec: number; sourceBpm: number; audio: string }[];
+  cands: { spec: LyriaSpec; explanation: string; raw: Ghost["raw"]; startSec: number; sourceBpm: number; transpose?: number; detectedKey?: string; model?: string; audio: string }[];
 };
 const params = new URLSearchParams(location.search);
 if (params.has("demo")) {
@@ -399,12 +399,15 @@ if (params.has("demo")) {
       project.log.push({
         at: new Date().toISOString(), track: set.target, intent: set.intent, spec: set.cands[0].spec, proposed: 0, accepted: 0, reason: "",
         titles: set.cands.map((c, k) => `${LABELS[k]}: ${c.spec.title ?? ""}（事前生成）`),
+        model: set.cands[0].model === "realtime" || !set.cands[0].model ? "Lyria RealTime" : "Lyria 3.5",
       });
       const logIndex = project.log.length - 1;
       const t = project.tracks[set.target];
       t.alts = set.cands.map((c, k) => {
-        const g = makeGhost(set.target, set.intent, c.spec, fulls[k], c.raw, logIndex, k, { startSec: c.startSec, sourceBpm: c.sourceBpm });
+        const g = makeGhost(set.target, set.intent, c.spec, fulls[k], c.raw, logIndex, k, { startSec: c.startSec, sourceBpm: c.sourceBpm, transpose: c.transpose ?? 0 });
         g.explanation = c.explanation;
+        g.model = c.model;
+        g.detectedKey = c.detectedKey;
         return g;
       });
       project.log[logIndex].proposed = Math.max(...t.alts.map((g) => g.proposed));
@@ -427,6 +430,7 @@ if (params.has("debug")) {
       intent: t.alts[0].intent, target: t.id, bpm: project.bpm, root: project.root, createdAt: new Date().toISOString(),
       cands: t.alts.map((g) => ({
         spec: g.spec, explanation: g.explanation, raw: g.raw, startSec: g.startSec, sourceBpm: g.sourceBpm,
+        transpose: g.transpose ?? 0, detectedKey: g.detectedKey, model: g.model,
         wav: wavBase64(g.full),
       })),
     };

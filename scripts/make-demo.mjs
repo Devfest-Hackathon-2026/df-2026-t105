@@ -20,7 +20,7 @@ await page.selectOption("#target", "lead");
 await page.fill("#intent", intent);
 await page.uncheck("#monitor");
 await page.click("#ask");
-await page.waitForFunction(() => /2案が届きました|できませんでした|失敗/.test(document.getElementById("status")?.textContent ?? ""), null, { timeout: 240_000 });
+await page.waitForFunction(() => /2案が届きました|できませんでした|失敗/.test(document.getElementById("status")?.textContent ?? ""), null, { timeout: 420_000 });
 console.log(await page.textContent("#status"));
 // 両方の案の説明が届くまで待つ
 await page.waitForFunction(() => {
