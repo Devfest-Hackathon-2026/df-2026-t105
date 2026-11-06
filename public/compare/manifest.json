@@ -1,0 +1,1687 @@
+{
+  "id": "prompt-transcription-2026-11-06",
+  "updatedAt": "2026-11-06T12:54:04.478Z",
+  "models": [
+    "basic-pitch",
+    "large-a100",
+    "medium-a100",
+    "small-a100"
+  ],
+  "samples": [
+    {
+      "id": "lead-current-1",
+      "role": "lead",
+      "draw": 1,
+      "duration": 20,
+      "condition": "current",
+      "conditionName": "従来のソロ指定",
+      "prompt": "[0:00 - 0:20] A short loop: solo monophonic dry flute, single notes, a slightly wistful melody that rises in the final bar. The new part plays together with this existing loop (note length is in beats): drums: bars1-4 kick@1,2,3,4 snare@2,4 closed hat@1,1.5,2,2.5,3,3.5,4,4.5; bass melody: bar1 A1(1b) A2(0.5b); bar2 F1(1b) F2(0.5b); bar3 C2(1b) C3(0.5b); bar4 G1(1b) G2(0.5b). Make it fit around them. no drums, no chords, no other instruments. Strict steady tempo of 100 BPM in 4/4, key of C major. Instrumental only, no vocals, no singing. The track ends at 0:20.",
+      "original": "./audio/lead-current-1.mp3",
+      "variants": [
+        {
+          "id": "basic-pitch/multitrack",
+          "model": "basic-pitch",
+          "method": "原音 → 音高を採譜（楽器分類なし）",
+          "url": "./audio/lead-current-1.basic-pitch.multitrack.mp3",
+          "notes": 58,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": false
+        },
+        {
+          "id": "large-a100/constrained",
+          "model": "large-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-1.large-a100.constrained.mp3",
+          "notes": 41,
+          "seconds": 4.299863815307617,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack-conditioned",
+          "model": "large-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-current-1.large-a100.multitrack-conditioned.mp3",
+          "notes": 75,
+          "seconds": 5.156129837036133,
+          "instruments": [
+            "drums",
+            "flutes",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack",
+          "model": "large-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-1.large-a100.multitrack.mp3",
+          "notes": 74,
+          "seconds": 5.145879030227661,
+          "instruments": [
+            "drums",
+            "synth_pad"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-constrained",
+          "model": "large-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-1.large-a100.stem-constrained.mp3",
+          "notes": 40,
+          "seconds": 4.307565689086914,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-multitrack",
+          "model": "large-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-1.large-a100.stem-multitrack.mp3",
+          "notes": 40,
+          "seconds": 4.472260475158691,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/constrained",
+          "model": "medium-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-1.medium-a100.constrained.mp3",
+          "notes": 39,
+          "seconds": 2.157667636871338,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack-conditioned",
+          "model": "medium-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-current-1.medium-a100.multitrack-conditioned.mp3",
+          "notes": 81,
+          "seconds": 2.664912223815918,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack",
+          "model": "medium-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-1.medium-a100.multitrack.mp3",
+          "notes": 79,
+          "seconds": 2.6228394508361816,
+          "instruments": [
+            "acoustic_guitar",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-constrained",
+          "model": "medium-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-1.medium-a100.stem-constrained.mp3",
+          "notes": 41,
+          "seconds": 2.4423062801361084,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-multitrack",
+          "model": "medium-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-1.medium-a100.stem-multitrack.mp3",
+          "notes": 40,
+          "seconds": 2.2868752479553223,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/constrained",
+          "model": "small-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-1.small-a100.constrained.mp3",
+          "notes": 75,
+          "seconds": 2.7770888805389404,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack-conditioned",
+          "model": "small-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-current-1.small-a100.multitrack-conditioned.mp3",
+          "notes": 116,
+          "seconds": 2.2131781578063965,
+          "instruments": [
+            "drums",
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack",
+          "model": "small-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-1.small-a100.multitrack.mp3",
+          "notes": 0,
+          "seconds": 0.10574650764465332,
+          "instruments": [],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-constrained",
+          "model": "small-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-1.small-a100.stem-constrained.mp3",
+          "notes": 40,
+          "seconds": 1.4106507301330566,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-multitrack",
+          "model": "small-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-1.small-a100.stem-multitrack.mp3",
+          "notes": 0,
+          "seconds": 0.08270525932312012,
+          "instruments": [],
+          "instrumentClassification": true
+        }
+      ]
+    },
+    {
+      "id": "lead-isolated-1",
+      "role": "lead",
+      "draw": 1,
+      "duration": 20,
+      "condition": "isolated",
+      "conditionName": "対象トラックだけを出力するよう強調",
+      "prompt": "DELIVER ONLY THE ISOLATED FLUTE LEAD TRACK, as a dry stem for a DAW. [0:00 - 0:20] A short loop: solo monophonic dry flute, single notes, a slightly wistful melody that rises in the final bar. The new part plays together with this existing loop (note length is in beats): drums: bars1-4 kick@1,2,3,4 snare@2,4 closed hat@1,1.5,2,2.5,3,3.5,4,4.5; bass melody: bar1 A1(1b) A2(0.5b); bar2 F1(1b) F2(0.5b); bar3 C2(1b) C3(0.5b); bar4 G1(1b) G2(0.5b). Make it fit around them. no drums, no chords, no other instruments. Strict steady tempo of 100 BPM in 4/4, key of C major. Instrumental only, no vocals, no singing. The track ends at 0:20. The accompaniment described above is already playing in the user's DAW; it is harmonic and rhythmic reference ONLY. Do NOT render, imitate, double, or add that accompaniment to this output. Exactly one instrument, playing one note at a time. No backing track, no drum kit, percussion, chords, pads, additional bass or melody instruments, vocal sounds, effects or reverb. The delivered audio must contain ONLY the requested lead instrument from start to finish.",
+      "original": "./audio/lead-isolated-1.mp3",
+      "variants": [
+        {
+          "id": "basic-pitch/multitrack",
+          "model": "basic-pitch",
+          "method": "原音 → 音高を採譜（楽器分類なし）",
+          "url": "./audio/lead-isolated-1.basic-pitch.multitrack.mp3",
+          "notes": 99,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": false
+        },
+        {
+          "id": "large-a100/constrained",
+          "model": "large-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-1.large-a100.constrained.mp3",
+          "notes": 77,
+          "seconds": 6.368058443069458,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack-conditioned",
+          "model": "large-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-isolated-1.large-a100.multitrack-conditioned.mp3",
+          "notes": 86,
+          "seconds": 6.773569107055664,
+          "instruments": [
+            "flutes",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack",
+          "model": "large-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-1.large-a100.multitrack.mp3",
+          "notes": 84,
+          "seconds": 6.5102152824401855,
+          "instruments": [
+            "flutes",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-constrained",
+          "model": "large-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-1.large-a100.stem-constrained.mp3",
+          "notes": 76,
+          "seconds": 6.192473888397217,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-multitrack",
+          "model": "large-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-1.large-a100.stem-multitrack.mp3",
+          "notes": 76,
+          "seconds": 6.2329630851745605,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/constrained",
+          "model": "medium-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-1.medium-a100.constrained.mp3",
+          "notes": 76,
+          "seconds": 3.234290361404419,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack-conditioned",
+          "model": "medium-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-isolated-1.medium-a100.multitrack-conditioned.mp3",
+          "notes": 87,
+          "seconds": 3.4119839668273926,
+          "instruments": [
+            "flutes",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack",
+          "model": "medium-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-1.medium-a100.multitrack.mp3",
+          "notes": 88,
+          "seconds": 3.40885066986084,
+          "instruments": [
+            "flutes",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-constrained",
+          "model": "medium-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-1.medium-a100.stem-constrained.mp3",
+          "notes": 78,
+          "seconds": 3.2272543907165527,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-multitrack",
+          "model": "medium-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-1.medium-a100.stem-multitrack.mp3",
+          "notes": 82,
+          "seconds": 3.361025810241699,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/constrained",
+          "model": "small-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-1.small-a100.constrained.mp3",
+          "notes": 72,
+          "seconds": 2.2501068115234375,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack-conditioned",
+          "model": "small-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-isolated-1.small-a100.multitrack-conditioned.mp3",
+          "notes": 96,
+          "seconds": 2.361163854598999,
+          "instruments": [
+            "flutes",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack",
+          "model": "small-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-1.small-a100.multitrack.mp3",
+          "notes": 81,
+          "seconds": 2.2131941318511963,
+          "instruments": [
+            "acoustic_piano",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-constrained",
+          "model": "small-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-1.small-a100.stem-constrained.mp3",
+          "notes": 68,
+          "seconds": 2.1721394062042236,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-multitrack",
+          "model": "small-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-1.small-a100.stem-multitrack.mp3",
+          "notes": 74,
+          "seconds": 2.0666089057922363,
+          "instruments": [
+            "acoustic_piano"
+          ],
+          "instrumentClassification": true
+        }
+      ]
+    },
+    {
+      "id": "bass-isolated-1",
+      "role": "bass",
+      "draw": 1,
+      "duration": 20,
+      "condition": "isolated",
+      "conditionName": "対象トラックだけを出力するよう強調",
+      "prompt": "DELIVER ONLY THE ISOLATED ELECTRIC BASS TRACK, as a dry stem for a DAW. [0:00 - 0:20] A short loop: solo monophonic dry electric bass fingered, single notes, a bouncy bassline locked to the kick drum. The new part plays together with this existing loop (note length is in beats): drums: bars1-4 kick@1,2,3,4 snare@2,4 closed hat@1,1.5,2,2.5,3,3.5,4,4.5. Make it fit around them. no drums, no chords, no other instruments. Strict steady tempo of 100 BPM in 4/4, key of C major. Instrumental only, no vocals, no singing. The track ends at 0:20. The accompaniment described above is already playing in the user's DAW; it is harmonic and rhythmic reference ONLY. Do NOT render, imitate, double, or add that accompaniment to this output. Exactly one instrument, playing one note at a time. No backing track, no drum kit, percussion, chords, pads, additional bass or melody instruments, vocal sounds, effects or reverb. The delivered audio must contain ONLY the requested bass instrument from start to finish.",
+      "original": "./audio/bass-isolated-1.mp3",
+      "variants": [
+        {
+          "id": "basic-pitch/multitrack",
+          "model": "basic-pitch",
+          "method": "原音 → 音高を採譜（楽器分類なし）",
+          "url": "./audio/bass-isolated-1.basic-pitch.multitrack.mp3",
+          "notes": 62,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": false
+        },
+        {
+          "id": "large-a100/constrained",
+          "model": "large-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-1.large-a100.constrained.mp3",
+          "notes": 69,
+          "seconds": 7.510656118392944,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack-conditioned",
+          "model": "large-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-isolated-1.large-a100.multitrack-conditioned.mp3",
+          "notes": 122,
+          "seconds": 8.291985511779785,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack",
+          "model": "large-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-1.large-a100.multitrack.mp3",
+          "notes": 123,
+          "seconds": 8.52916169166565,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-constrained",
+          "model": "large-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-1.large-a100.stem-constrained.mp3",
+          "notes": 62,
+          "seconds": 6.671757936477661,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-multitrack",
+          "model": "large-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-1.large-a100.stem-multitrack.mp3",
+          "notes": 62,
+          "seconds": 6.659574270248413,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/constrained",
+          "model": "medium-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-1.medium-a100.constrained.mp3",
+          "notes": 69,
+          "seconds": 3.8873586654663086,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack-conditioned",
+          "model": "medium-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-isolated-1.medium-a100.multitrack-conditioned.mp3",
+          "notes": 161,
+          "seconds": 4.667564868927002,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack",
+          "model": "medium-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-1.medium-a100.multitrack.mp3",
+          "notes": 160,
+          "seconds": 4.671170949935913,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-constrained",
+          "model": "medium-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-1.medium-a100.stem-constrained.mp3",
+          "notes": 60,
+          "seconds": 3.3936352729797363,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-multitrack",
+          "model": "medium-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-1.medium-a100.stem-multitrack.mp3",
+          "notes": 60,
+          "seconds": 3.287219762802124,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/constrained",
+          "model": "small-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-1.small-a100.constrained.mp3",
+          "notes": 66,
+          "seconds": 2.379859209060669,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack-conditioned",
+          "model": "small-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-isolated-1.small-a100.multitrack-conditioned.mp3",
+          "notes": 119,
+          "seconds": 2.7256217002868652,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack",
+          "model": "small-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-1.small-a100.multitrack.mp3",
+          "notes": 118,
+          "seconds": 2.720985174179077,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-constrained",
+          "model": "small-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-1.small-a100.stem-constrained.mp3",
+          "notes": 60,
+          "seconds": 2.1275854110717773,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-multitrack",
+          "model": "small-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-1.small-a100.stem-multitrack.mp3",
+          "notes": 60,
+          "seconds": 2.1043570041656494,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        }
+      ]
+    },
+    {
+      "id": "bass-current-1",
+      "role": "bass",
+      "draw": 1,
+      "duration": 20,
+      "condition": "current",
+      "conditionName": "従来のソロ指定",
+      "prompt": "[0:00 - 0:20] A short loop: solo monophonic dry electric bass fingered, single notes, a bouncy bassline locked to the kick drum. The new part plays together with this existing loop (note length is in beats): drums: bars1-4 kick@1,2,3,4 snare@2,4 closed hat@1,1.5,2,2.5,3,3.5,4,4.5. Make it fit around them. no drums, no chords, no other instruments. Strict steady tempo of 100 BPM in 4/4, key of C major. Instrumental only, no vocals, no singing. The track ends at 0:20.",
+      "original": "./audio/bass-current-1.mp3",
+      "variants": [
+        {
+          "id": "basic-pitch/multitrack",
+          "model": "basic-pitch",
+          "method": "原音 → 音高を採譜（楽器分類なし）",
+          "url": "./audio/bass-current-1.basic-pitch.multitrack.mp3",
+          "notes": 88,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": false
+        },
+        {
+          "id": "large-a100/constrained",
+          "model": "large-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-1.large-a100.constrained.mp3",
+          "notes": 108,
+          "seconds": 11.07915210723877,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack-conditioned",
+          "model": "large-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-current-1.large-a100.multitrack-conditioned.mp3",
+          "notes": 117,
+          "seconds": 11.070152997970581,
+          "instruments": [
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack",
+          "model": "large-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-1.large-a100.multitrack.mp3",
+          "notes": 117,
+          "seconds": 11.055013418197632,
+          "instruments": [
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-constrained",
+          "model": "large-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-1.large-a100.stem-constrained.mp3",
+          "notes": 105,
+          "seconds": 10.894089460372925,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-multitrack",
+          "model": "large-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-1.large-a100.stem-multitrack.mp3",
+          "notes": 106,
+          "seconds": 10.9297194480896,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/constrained",
+          "model": "medium-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-1.medium-a100.constrained.mp3",
+          "notes": 115,
+          "seconds": 6.02397084236145,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack-conditioned",
+          "model": "medium-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-current-1.medium-a100.multitrack-conditioned.mp3",
+          "notes": 124,
+          "seconds": 6.044788837432861,
+          "instruments": [
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack",
+          "model": "medium-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-1.medium-a100.multitrack.mp3",
+          "notes": 124,
+          "seconds": 6.066737413406372,
+          "instruments": [
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-constrained",
+          "model": "medium-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-1.medium-a100.stem-constrained.mp3",
+          "notes": 112,
+          "seconds": 5.878172397613525,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-multitrack",
+          "model": "medium-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-1.medium-a100.stem-multitrack.mp3",
+          "notes": 113,
+          "seconds": 5.993522882461548,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/constrained",
+          "model": "small-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-1.small-a100.constrained.mp3",
+          "notes": 98,
+          "seconds": 3.403294324874878,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack-conditioned",
+          "model": "small-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-current-1.small-a100.multitrack-conditioned.mp3",
+          "notes": 114,
+          "seconds": 3.5190436840057373,
+          "instruments": [
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack",
+          "model": "small-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-1.small-a100.multitrack.mp3",
+          "notes": 107,
+          "seconds": 3.407893180847168,
+          "instruments": [
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-constrained",
+          "model": "small-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-1.small-a100.stem-constrained.mp3",
+          "notes": 96,
+          "seconds": 3.393373966217041,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-multitrack",
+          "model": "small-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-1.small-a100.stem-multitrack.mp3",
+          "notes": 96,
+          "seconds": 3.3052525520324707,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        }
+      ]
+    },
+    {
+      "id": "lead-isolated-2",
+      "role": "lead",
+      "draw": 2,
+      "duration": 20,
+      "condition": "isolated",
+      "conditionName": "対象トラックだけを出力するよう強調",
+      "prompt": "DELIVER ONLY THE ISOLATED FLUTE LEAD TRACK, as a dry stem for a DAW. [0:00 - 0:20] A short loop: solo monophonic dry flute, single notes, a slightly wistful melody that rises in the final bar. The new part plays together with this existing loop (note length is in beats): drums: bars1-4 kick@1,2,3,4 snare@2,4 closed hat@1,1.5,2,2.5,3,3.5,4,4.5; bass melody: bar1 A1(1b) A2(0.5b); bar2 F1(1b) F2(0.5b); bar3 C2(1b) C3(0.5b); bar4 G1(1b) G2(0.5b). Make it fit around them. no drums, no chords, no other instruments. Strict steady tempo of 100 BPM in 4/4, key of C major. Instrumental only, no vocals, no singing. The track ends at 0:20. The accompaniment described above is already playing in the user's DAW; it is harmonic and rhythmic reference ONLY. Do NOT render, imitate, double, or add that accompaniment to this output. Exactly one instrument, playing one note at a time. No backing track, no drum kit, percussion, chords, pads, additional bass or melody instruments, vocal sounds, effects or reverb. The delivered audio must contain ONLY the requested lead instrument from start to finish.",
+      "original": "./audio/lead-isolated-2.mp3",
+      "variants": [
+        {
+          "id": "basic-pitch/multitrack",
+          "model": "basic-pitch",
+          "method": "原音 → 音高を採譜（楽器分類なし）",
+          "url": "./audio/lead-isolated-2.basic-pitch.multitrack.mp3",
+          "notes": 52,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": false
+        },
+        {
+          "id": "large-a100/constrained",
+          "model": "large-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-2.large-a100.constrained.mp3",
+          "notes": 32,
+          "seconds": 3.526466131210327,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack-conditioned",
+          "model": "large-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-isolated-2.large-a100.multitrack-conditioned.mp3",
+          "notes": 34,
+          "seconds": 3.5418989658355713,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack",
+          "model": "large-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-2.large-a100.multitrack.mp3",
+          "notes": 32,
+          "seconds": 3.5168278217315674,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-constrained",
+          "model": "large-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-2.large-a100.stem-constrained.mp3",
+          "notes": 32,
+          "seconds": 3.5516738891601562,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-multitrack",
+          "model": "large-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-2.large-a100.stem-multitrack.mp3",
+          "notes": 32,
+          "seconds": 3.6494016647338867,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/constrained",
+          "model": "medium-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-2.medium-a100.constrained.mp3",
+          "notes": 32,
+          "seconds": 1.774714708328247,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack-conditioned",
+          "model": "medium-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-isolated-2.medium-a100.multitrack-conditioned.mp3",
+          "notes": 33,
+          "seconds": 1.8009648323059082,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack",
+          "model": "medium-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-2.medium-a100.multitrack.mp3",
+          "notes": 33,
+          "seconds": 1.8252098560333252,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-constrained",
+          "model": "medium-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-2.medium-a100.stem-constrained.mp3",
+          "notes": 32,
+          "seconds": 1.7685167789459229,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-multitrack",
+          "model": "medium-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-2.medium-a100.stem-multitrack.mp3",
+          "notes": 33,
+          "seconds": 1.840996503829956,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/constrained",
+          "model": "small-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-2.small-a100.constrained.mp3",
+          "notes": 34,
+          "seconds": 1.206648588180542,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack-conditioned",
+          "model": "small-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-isolated-2.small-a100.multitrack-conditioned.mp3",
+          "notes": 33,
+          "seconds": 1.170499324798584,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack",
+          "model": "small-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-2.small-a100.multitrack.mp3",
+          "notes": 34,
+          "seconds": 1.1952199935913086,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-constrained",
+          "model": "small-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-isolated-2.small-a100.stem-constrained.mp3",
+          "notes": 34,
+          "seconds": 1.2158129215240479,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-multitrack",
+          "model": "small-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-isolated-2.small-a100.stem-multitrack.mp3",
+          "notes": 34,
+          "seconds": 1.1811716556549072,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        }
+      ]
+    },
+    {
+      "id": "lead-current-2",
+      "role": "lead",
+      "draw": 2,
+      "duration": 20,
+      "condition": "current",
+      "conditionName": "従来のソロ指定",
+      "prompt": "[0:00 - 0:20] A short loop: solo monophonic dry flute, single notes, a slightly wistful melody that rises in the final bar. The new part plays together with this existing loop (note length is in beats): drums: bars1-4 kick@1,2,3,4 snare@2,4 closed hat@1,1.5,2,2.5,3,3.5,4,4.5; bass melody: bar1 A1(1b) A2(0.5b); bar2 F1(1b) F2(0.5b); bar3 C2(1b) C3(0.5b); bar4 G1(1b) G2(0.5b). Make it fit around them. no drums, no chords, no other instruments. Strict steady tempo of 100 BPM in 4/4, key of C major. Instrumental only, no vocals, no singing. The track ends at 0:20.",
+      "original": "./audio/lead-current-2.mp3",
+      "variants": [
+        {
+          "id": "basic-pitch/multitrack",
+          "model": "basic-pitch",
+          "method": "原音 → 音高を採譜（楽器分類なし）",
+          "url": "./audio/lead-current-2.basic-pitch.multitrack.mp3",
+          "notes": 119,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": false
+        },
+        {
+          "id": "large-a100/constrained",
+          "model": "large-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-2.large-a100.constrained.mp3",
+          "notes": 37,
+          "seconds": 4.386835813522339,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack-conditioned",
+          "model": "large-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-current-2.large-a100.multitrack-conditioned.mp3",
+          "notes": 75,
+          "seconds": 5.9156494140625,
+          "instruments": [
+            "flutes",
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack",
+          "model": "large-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-2.large-a100.multitrack.mp3",
+          "notes": 87,
+          "seconds": 6.384542942047119,
+          "instruments": [
+            "flutes",
+            "electric_piano",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-constrained",
+          "model": "large-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-2.large-a100.stem-constrained.mp3",
+          "notes": 97,
+          "seconds": 7.461515188217163,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-multitrack",
+          "model": "large-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-2.large-a100.stem-multitrack.mp3",
+          "notes": 96,
+          "seconds": 7.518029451370239,
+          "instruments": [
+            "flutes",
+            "electric_piano",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/constrained",
+          "model": "medium-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-2.medium-a100.constrained.mp3",
+          "notes": 84,
+          "seconds": 2.9740984439849854,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack-conditioned",
+          "model": "medium-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-current-2.medium-a100.multitrack-conditioned.mp3",
+          "notes": 95,
+          "seconds": 3.0535755157470703,
+          "instruments": [
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack",
+          "model": "medium-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-2.medium-a100.multitrack.mp3",
+          "notes": 84,
+          "seconds": 3.365072011947632,
+          "instruments": [
+            "flutes",
+            "acoustic_piano"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-constrained",
+          "model": "medium-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-2.medium-a100.stem-constrained.mp3",
+          "notes": 84,
+          "seconds": 2.9397072792053223,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-multitrack",
+          "model": "medium-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-2.medium-a100.stem-multitrack.mp3",
+          "notes": 81,
+          "seconds": 3.2262706756591797,
+          "instruments": [
+            "flutes",
+            "acoustic_piano"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/constrained",
+          "model": "small-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-2.small-a100.constrained.mp3",
+          "notes": 74,
+          "seconds": 1.7466988563537598,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack-conditioned",
+          "model": "small-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/lead-current-2.small-a100.multitrack-conditioned.mp3",
+          "notes": 75,
+          "seconds": 1.869128704071045,
+          "instruments": [
+            "flutes",
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack",
+          "model": "small-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-2.small-a100.multitrack.mp3",
+          "notes": 82,
+          "seconds": 2.118879795074463,
+          "instruments": [
+            "flutes",
+            "acoustic_piano"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-constrained",
+          "model": "small-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/lead-current-2.small-a100.stem-constrained.mp3",
+          "notes": 74,
+          "seconds": 1.7266697883605957,
+          "instruments": [
+            "flutes"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-multitrack",
+          "model": "small-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/lead-current-2.small-a100.stem-multitrack.mp3",
+          "notes": 81,
+          "seconds": 2.1063060760498047,
+          "instruments": [
+            "flutes",
+            "acoustic_piano"
+          ],
+          "instrumentClassification": true
+        }
+      ]
+    },
+    {
+      "id": "bass-current-2",
+      "role": "bass",
+      "draw": 2,
+      "duration": 20,
+      "condition": "current",
+      "conditionName": "従来のソロ指定",
+      "prompt": "[0:00 - 0:20] A short loop: solo monophonic dry electric bass fingered, single notes, a bouncy bassline locked to the kick drum. The new part plays together with this existing loop (note length is in beats): drums: bars1-4 kick@1,2,3,4 snare@2,4 closed hat@1,1.5,2,2.5,3,3.5,4,4.5. Make it fit around them. no drums, no chords, no other instruments. Strict steady tempo of 100 BPM in 4/4, key of C major. Instrumental only, no vocals, no singing. The track ends at 0:20.",
+      "original": "./audio/bass-current-2.mp3",
+      "variants": [
+        {
+          "id": "basic-pitch/multitrack",
+          "model": "basic-pitch",
+          "method": "原音 → 音高を採譜（楽器分類なし）",
+          "url": "./audio/bass-current-2.basic-pitch.multitrack.mp3",
+          "notes": 43,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": false
+        },
+        {
+          "id": "large-a100/constrained",
+          "model": "large-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-2.large-a100.constrained.mp3",
+          "notes": 92,
+          "seconds": 9.349723815917969,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack-conditioned",
+          "model": "large-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-current-2.large-a100.multitrack-conditioned.mp3",
+          "notes": 130,
+          "seconds": 9.362353086471558,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack",
+          "model": "large-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-2.large-a100.multitrack.mp3",
+          "notes": 125,
+          "seconds": 9.138235807418823,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-constrained",
+          "model": "large-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-2.large-a100.stem-constrained.mp3",
+          "notes": 87,
+          "seconds": 9.050199747085571,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-multitrack",
+          "model": "large-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-2.large-a100.stem-multitrack.mp3",
+          "notes": 84,
+          "seconds": 8.652364253997803,
+          "instruments": [
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/constrained",
+          "model": "medium-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-2.medium-a100.constrained.mp3",
+          "notes": 91,
+          "seconds": 4.925503253936768,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack-conditioned",
+          "model": "medium-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-current-2.medium-a100.multitrack-conditioned.mp3",
+          "notes": 134,
+          "seconds": 4.79881477355957,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack",
+          "model": "medium-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-2.medium-a100.multitrack.mp3",
+          "notes": 131,
+          "seconds": 4.749513864517212,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-constrained",
+          "model": "medium-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-2.medium-a100.stem-constrained.mp3",
+          "notes": 72,
+          "seconds": 4.087814569473267,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-multitrack",
+          "model": "medium-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-2.medium-a100.stem-multitrack.mp3",
+          "notes": 71,
+          "seconds": 3.97983980178833,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/constrained",
+          "model": "small-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-2.small-a100.constrained.mp3",
+          "notes": 92,
+          "seconds": 3.1128592491149902,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack-conditioned",
+          "model": "small-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-current-2.small-a100.multitrack-conditioned.mp3",
+          "notes": 121,
+          "seconds": 2.9502785205841064,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack",
+          "model": "small-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-2.small-a100.multitrack.mp3",
+          "notes": 114,
+          "seconds": 2.9221744537353516,
+          "instruments": [
+            "electric_bass",
+            "drums"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-constrained",
+          "model": "small-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-current-2.small-a100.stem-constrained.mp3",
+          "notes": 69,
+          "seconds": 2.4933431148529053,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-multitrack",
+          "model": "small-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-current-2.small-a100.stem-multitrack.mp3",
+          "notes": 69,
+          "seconds": 2.431872844696045,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        }
+      ]
+    },
+    {
+      "id": "bass-isolated-2",
+      "role": "bass",
+      "draw": 2,
+      "duration": 20,
+      "condition": "isolated",
+      "conditionName": "対象トラックだけを出力するよう強調",
+      "prompt": "DELIVER ONLY THE ISOLATED ELECTRIC BASS TRACK, as a dry stem for a DAW. [0:00 - 0:20] A short loop: solo monophonic dry electric bass fingered, single notes, a bouncy bassline locked to the kick drum. The new part plays together with this existing loop (note length is in beats): drums: bars1-4 kick@1,2,3,4 snare@2,4 closed hat@1,1.5,2,2.5,3,3.5,4,4.5. Make it fit around them. no drums, no chords, no other instruments. Strict steady tempo of 100 BPM in 4/4, key of C major. Instrumental only, no vocals, no singing. The track ends at 0:20. The accompaniment described above is already playing in the user's DAW; it is harmonic and rhythmic reference ONLY. Do NOT render, imitate, double, or add that accompaniment to this output. Exactly one instrument, playing one note at a time. No backing track, no drum kit, percussion, chords, pads, additional bass or melody instruments, vocal sounds, effects or reverb. The delivered audio must contain ONLY the requested bass instrument from start to finish.",
+      "original": "./audio/bass-isolated-2.mp3",
+      "variants": [
+        {
+          "id": "basic-pitch/multitrack",
+          "model": "basic-pitch",
+          "method": "原音 → 音高を採譜（楽器分類なし）",
+          "url": "./audio/bass-isolated-2.basic-pitch.multitrack.mp3",
+          "notes": 92,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": false
+        },
+        {
+          "id": "large-a100/constrained",
+          "model": "large-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-2.large-a100.constrained.mp3",
+          "notes": 51,
+          "seconds": 5.116098642349243,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack-conditioned",
+          "model": "large-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-isolated-2.large-a100.multitrack-conditioned.mp3",
+          "notes": 139,
+          "seconds": 7.475386381149292,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/multitrack",
+          "model": "large-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-2.large-a100.multitrack.mp3",
+          "notes": 144,
+          "seconds": 8.269766569137573,
+          "instruments": [
+            "drums",
+            "clean_electric_guitar",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-constrained",
+          "model": "large-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-2.large-a100.stem-constrained.mp3",
+          "notes": 51,
+          "seconds": 5.3367919921875,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "large-a100/stem-multitrack",
+          "model": "large-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-2.large-a100.stem-multitrack.mp3",
+          "notes": 50,
+          "seconds": 5.212164878845215,
+          "instruments": [
+            "clean_electric_guitar",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/constrained",
+          "model": "medium-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-2.medium-a100.constrained.mp3",
+          "notes": 56,
+          "seconds": 2.865501880645752,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack-conditioned",
+          "model": "medium-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-isolated-2.medium-a100.multitrack-conditioned.mp3",
+          "notes": 162,
+          "seconds": 4.2001636028289795,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/multitrack",
+          "model": "medium-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-2.medium-a100.multitrack.mp3",
+          "notes": 186,
+          "seconds": 5.772061109542847,
+          "instruments": [
+            "drums",
+            "distorted_electric_guitar",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-constrained",
+          "model": "medium-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-2.medium-a100.stem-constrained.mp3",
+          "notes": 51,
+          "seconds": 2.600480079650879,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "medium-a100/stem-multitrack",
+          "model": "medium-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-2.medium-a100.stem-multitrack.mp3",
+          "notes": 52,
+          "seconds": 2.897942543029785,
+          "instruments": [
+            "distorted_electric_guitar",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/constrained",
+          "model": "small-a100",
+          "method": "原音 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-2.small-a100.constrained.mp3",
+          "notes": 54,
+          "seconds": 1.7728476524353027,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack-conditioned",
+          "model": "small-a100",
+          "method": "原音 → 想定する複数楽器を指定して採譜",
+          "url": "./audio/bass-isolated-2.small-a100.multitrack-conditioned.mp3",
+          "notes": 156,
+          "seconds": 2.6145050525665283,
+          "instruments": [
+            "drums",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/multitrack",
+          "model": "small-a100",
+          "method": "原音 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-2.small-a100.multitrack.mp3",
+          "notes": 177,
+          "seconds": 3.3686931133270264,
+          "instruments": [
+            "drums",
+            "acoustic_piano",
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-constrained",
+          "model": "small-a100",
+          "method": "ステム分離 → 対象楽器だけに制限して採譜",
+          "url": "./audio/bass-isolated-2.small-a100.stem-constrained.mp3",
+          "notes": 51,
+          "seconds": 1.6733424663543701,
+          "instruments": [
+            "electric_bass"
+          ],
+          "instrumentClassification": true
+        },
+        {
+          "id": "small-a100/stem-multitrack",
+          "model": "small-a100",
+          "method": "ステム分離 → 複数楽器を自動判別して採譜",
+          "url": "./audio/bass-isolated-2.small-a100.stem-multitrack.mp3",
+          "notes": 48,
+          "seconds": 1.6420152187347412,
+          "instruments": [
+            "acoustic_piano"
+          ],
+          "instrumentClassification": true
+        }
+      ]
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import { findGridPhase } from "./core/clean.js";
 import type { Note } from "./state";
 import { encodeMonoWav } from "./wav";
 
-export type MusNote = { pitch: number; start: number; end: number };
+export type MusNote = { pitch: number; start: number; end: number; instrument: string };
 
 /** 中継サーバー経由で muscriptor に採譜を頼む（サーバーに MUSCRIPTOR_URL が設定されているときだけ使える） */
 export async function transcribeWithMuscriptor(mono: Float32Array, sampleRate: number, instruments: string[], backend: "cpu" | "a100" = "cpu"): Promise<MusNote[]> {
@@ -13,7 +13,7 @@ export async function transcribeWithMuscriptor(mono: Float32Array, sampleRate: n
     body: encodeMonoWav(mono, sampleRate),
   });
   if (!r.ok) throw new Error(`muscriptor の採譜に失敗しました（${r.status}）: ${(await r.text()).slice(0, 200)}`);
-  const { events } = (await r.json()) as { events: { type: string; pitch?: number; start_time?: number; end_time?: number; index?: number; start_event_index?: number }[] };
+  const { events } = (await r.json()) as { events: { type: string; pitch?: number; start_time?: number; end_time?: number; index?: number; instrument?: string; start_event_index?: number }[] };
   return muscriptorNotes(events);
 }
 

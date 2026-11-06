@@ -5,7 +5,7 @@ import { tmpdir, homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { setTimeout as delay } from "node:timers/promises";
-const model = process.env.A100_MODEL ?? "medium";
+const model = process.env.A100_MODEL ?? "large";
 const minutes = Number(process.env.A100_MINUTES ?? 60);
 const port = Number(process.env.A100_PORT ?? 8223);
 if (!["small", "medium", "large"].includes(model) || !Number.isFinite(minutes) || minutes < 1 || !Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("A100_MODEL / A100_MINUTES / A100_PORT を確認してください");
@@ -38,8 +38,8 @@ try {
   const { createServer } = await import("node:net");
   await new Promise((ok, fail) => { const s = createServer(); s.once("error", fail); s.listen(port, "127.0.0.1", () => s.close(ok)); });
   await command("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", join(dir, "id")]);
-  await command("colab", ["new", "-s", session, "--gpu", "A100"]);
   created = true;
+  await command("colab", ["new", "-s", session, "--gpu", "A100"]);
   lifetime = setTimeout(() => { console.log("A100 の利用時間を終了します"); void cleanup(); }, minutes * 60_000);
   await command("colab", ["upload", "-s", session, tokenPath, "/content/ghostnotes-hf-token"]);
   writeFileSync(join(dir, "model.txt"), model);

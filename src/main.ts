@@ -296,7 +296,7 @@ askBtn.onclick = async () => {
   requestedCount = candidateCount.value === "2" ? 2 : 1;
   const backend = transcriberSel.value as "browser" | "cpu" | "a100";
   try {
-    setStatus("1/4 意図を解釈しています");
+    setStatus("1/3 意図を解釈しています");
     let specs: LyriaSpec[];
     try {
       specs = await intentToSpecs(apiKey, project, target, intent, requestedCount as 1 | 2);
@@ -316,7 +316,7 @@ askBtn.onclick = async () => {
     let fulls: AudioBuffer[];
     if (model === "realtime") {
       const prog = specs.map(() => 0);
-      const showProg = () => setStatus(`2/4 Lyria RealTime が演奏しています ${Math.min(...prog).toFixed(0)} / ${seconds.toFixed(0)} 秒`);
+      const showProg = () => setStatus(`2/3 Lyria RealTime が演奏しています ${Math.min(...prog).toFixed(0)} / ${seconds.toFixed(0)} 秒`);
       showProg();
       // 2案を同時に生成する。生成中の試聴は案Aだけ鳴らす
       fulls = await Promise.all(specs.map((spec, k) =>
@@ -328,7 +328,7 @@ askBtn.onclick = async () => {
       ));
     } else {
       const label = model === "lyria-3.5" ? "Lyria 3.5" : "Lyria 3 Clip";
-      setStatus(`2/4 ${label} が作曲しています`);
+      setStatus(`2/3 ${label} が作曲しています`);
       const keyName = projectKeyName();
       const clipSec = Math.ceil(seconds + barSec * 2);
       const res = await Promise.all(specs.map((spec) =>
@@ -351,7 +351,7 @@ askBtn.onclick = async () => {
     t.alts = [];
     roll.track = target;
     for (let k = 0; k < specs.length; k++) {
-      setStatus(`3/4 案${LABELS[k]}を耳コピしています`);
+      setStatus(`3/3 案${LABELS[k]}を耳コピしています`);
       let g: Ghost;
       if (target === "drums") {
         g = await makeDrumGhost(intent, specs[k], fulls[k], logIndex, k, backend);
@@ -359,9 +359,9 @@ askBtn.onclick = async () => {
         // 非リアルタイムのモデルは1分ほどの曲を返すので、耳コピは先頭の約35秒だけにする（時間を抑えるため）
         const src = model === "realtime" ? fulls[k] : slice(engine.context, fulls[k], 0, Math.min(fulls[k].duration, 35));
         const raw = backend === "browser"
-          ? await transcribe(src, (p) => setStatus(`3/4 耳コピしています ${Math.round(p * 100)}%`))
+          ? await transcribe(src, (p) => setStatus(`3/3 耳コピしています ${Math.round(p * 100)}%`))
           : (await transcribeWithMuscriptor(await toMono22k(src), 22050, muscriptorInstruments(target, specs[k].prompts), backend))
-            .map((n) => ({ startTimeSeconds: n.start, durationSeconds: n.end - n.start, pitchMidi: n.pitch, amplitude: 0.8 }));
+            .map((n) => ({ startTimeSeconds: n.start, durationSeconds: n.end - n.start, pitchMidi: n.pitch, amplitude: 0.8, instrument: n.instrument }));
         g = makeGhost(target, intent, specs[k], fulls[k], raw, logIndex, k, undefined, model !== "realtime");
         g.model = model;
       }
@@ -770,7 +770,7 @@ document.addEventListener("keydown", (e) => {
 function setStatus(s: string, error = false) {
   statusEl.textContent = s;
   statusEl.classList.toggle("error", error);
-  // 「2/4 …」のような段階の表示から、進み具合のバーを動かす
+  // 「2/3 …」のような段階の表示から、進み具合のバーを動かす
   const m = /^(\d)\/(\d)/.exec(s);
   const bar = $("progressBar");
   if (m) bar.style.width = `${(Number(m[1]) / Number(m[2])) * 100}%`;

@@ -5,3 +5,6 @@ dist
 !.env.example
 *.local
 out/
+
+__pycache__/
+*.pyc
