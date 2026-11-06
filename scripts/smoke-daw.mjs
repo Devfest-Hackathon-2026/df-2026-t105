@@ -1,3 +1,4 @@
+import {editorProject} from "./fixtures/editor-project.mjs";
 // DAW としての基本操作（ノートの追加、元に戻す・やり直す、音色・音量・ソロ、WAV 書き出し）を確かめる。API は呼ばない。
 // usage: node scripts/smoke-daw.mjs [http://127.0.0.1:5317] [out/smoke-daw]
 import { chromium } from "playwright";
@@ -14,13 +15,13 @@ const check = (ok, msg) => { console.log(`${ok ? "PASS" : "FAIL"} ${msg}`); if (
 const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem("ghostnotes.project.v1") ?? "null"));
 
 await page.goto(url);
-await page.evaluate(() => localStorage.clear());
+await page.evaluate(p=>localStorage.setItem("ghostnotes.project.v1",JSON.stringify(p)),editorProject());
 await page.reload();
 
 // リードのトラックに1音置く（ピアノロールの左上あたりをクリック）
 const box = await page.locator("#roll").boundingBox();
 const before = (await stored())?.tracks?.lead?.notes?.length ?? 0;
-await page.mouse.click(box.x + 56 + 5, box.y + 22 + 6); // 鍵盤（56px）と目盛り（22px）の内側
+await page.mouse.click(box.x + 112 + 5, box.y + 22 + 6); // 鍵盤（112px）と目盛り（22px）の内側
 const afterAdd = (await stored()).tracks.lead.notes.length;
 check(afterAdd === before + 1, `ノートを追加できる（${before} → ${afterAdd}）`);
 

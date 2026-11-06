@@ -48,8 +48,8 @@ export async function intentToSpecs(apiKey: string, p: Project, target: TrackId,
   const role = targetRole === "bass" ? "bassline" : targetRole === "drums" ? "drum pattern" : "lead melody";
   const instrumentRules =
     targetRole === "drums"
-      ? `- Use only a dry drum kit with kick, snare and closed hi-hat (no cymbal crashes, toms, percussion or reverb), because only these three are transcribed.
-- Always include "dry drum kit, kick, snare, closed hi-hat" in the first prompt. Do not mention bass or any pitched instrument in the prompts (they leak into the kick band and break the transcription).`
+      ? `- Use a dry drum kit. Choose kick, snare, hi-hat, toms, ride, crash, brushes or percussion as appropriate to the requested style; preserve fills and fast subdivisions.
+- Do not include bass or pitched instruments. Deliver the drum part only.`
       : `- Pick ONE instrument from this list (they transcribe reliably): ${targetRole === "bass" ? '"synth bass", "electric bass (fingered)", "upright bass"' : '"square-wave synth lead", "flute", "whistling", "ocarina", "marimba"'}. Never guitar, piano, clarinet, strings, pads or choirs (they are hard to transcribe). Candidates may use different instruments.
 - Always include the words "solo", "monophonic", "dry" in the first prompt. No chords, no reverb.`;
   const prompt = `You help a beginner music producer. They are writing a ${p.bars}-bar loop at ${p.bpm} BPM in ${p.root} major / its relative minor.

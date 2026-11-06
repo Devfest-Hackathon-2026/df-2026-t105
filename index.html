@@ -44,7 +44,7 @@
           <button data-bars="4">4小節</button>
           <button data-bars="8">8小節</button>
         </div>
-        <select id="bars" hidden aria-hidden="true" tabindex="-1"><option value="4">4小節</option><option value="8">8小節</option></select>
+        <label class="t-field"><span>曲の小節数</span><input id="bars" type="number" min="1" step="1" inputmode="numeric" /></label><button id="extendBars" class="text-btn">＋8小節</button>
 
         <div class="seg" role="group" aria-label="聴くもの">
           <button data-mode="A" title="自分のノートだけを鳴らす">自分</button>
@@ -88,6 +88,15 @@
               <span class="lg lg-ghost dashed"></span>誤検出かも
             </span>
           </div>
+          <div class="edit-tools" aria-label="編集範囲とグリッド">
+            <button id="viewPrev" class="text-btn" aria-label="前の小節へ">前へ</button>
+            <button id="playView" class="text-btn">表示範囲を再生</button>
+            <label>表示開始<input id="viewStart" type="number" min="1" value="1" /></label>
+            <button id="viewNext" class="text-btn" aria-label="次の小節へ">次へ</button>
+            <label>表示幅<select id="viewBars"><option value="1">1小節</option><option value="2">2小節</option><option value="4" selected>4小節</option><option value="8">8小節</option><option value="16">16小節</option></select></label>
+            <label>グリッド<select id="grid"><option value="4">1/4</option><option value="2">1/8</option><option value="1">1/16</option><option value="0.5">1/32</option><option value="0.25" selected>1/64</option><option value="0.125">1/128</option><option value="1.3333333333333333">1/8 三連</option><option value="0.6666666666666666">1/16 三連</option><option value="0.3333333333333333">1/32 三連</option><option value="0">自由</option></select></label>
+            <input id="timeline" type="range" min="0" max="0" value="0" aria-label="曲内の表示位置" />
+          </div>
           <div id="takes" class="takes" hidden></div>
           <div class="roll-wrap"><canvas id="roll" aria-label="ピアノロール"></canvas></div>
           <div class="vel-wrap"><canvas id="vel" aria-label="ベロシティ（音の強さ）"></canvas></div>
@@ -111,6 +120,10 @@
                 <option value="lyria-3-clip-preview">Lyria 3 Clip</option>
                 <option value="realtime">Lyria RealTime</option>
               </select>
+            </div>
+            <div class="row">
+              <label class="stack">生成開始の小節<input id="generationStart" type="number" min="1" value="1" /></label>
+              <label class="stack">生成する小節数<input id="generationBars" type="number" min="1" max="32" value="4" /></label>
             </div>
             <div class="row">
               <label class="stack">生成数<select id="candidateCount"><option value="1">1案</option><option value="2">2案</option><option value="3">3案</option><option value="4">4案</option></select></label>

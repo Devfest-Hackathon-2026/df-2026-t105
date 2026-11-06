@@ -123,3 +123,10 @@ function precisionRecall(detected, truth) {
   };
 }
 
+
+test('midi: short snare rolls and triplets keep their timing and duration',()=>{
+ const notes=[0,.25,.5,.75,4/3].map(step=>({step,len:.125,pitch:38,vel:.8}));
+ const parsed=parseSmf(toMidiFile([{name:'Snare roll',channel:9,notes}],{bpm:120}));
+ const on=parsed.tracks[1].events.filter(e=>e.status===0x99),off=parsed.tracks[1].events.filter(e=>e.status===0x89);
+ assert.deepEqual(on.map(e=>e.tick),[0,30,60,90,160]);assert.deepEqual(off.map(e=>e.tick),[15,45,75,105,175]);
+});

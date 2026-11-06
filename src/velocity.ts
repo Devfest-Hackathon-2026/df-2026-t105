@@ -7,6 +7,8 @@ import type { Note, Project, TrackId } from "./state";
  * 棒の上をドラッグすると強さが変わり、離したときに onChange で確定する（元に戻すの対象になる）。
  */
 export class VelocityLane {
+  startBar=0;
+  viewBars=4;
   private ctx: CanvasRenderingContext2D;
   private drag: { pointerId: number; note: Note; vel: number } | null = null;
 
@@ -26,7 +28,7 @@ export class VelocityLane {
 
   private geom() {
     const r = this.canvas.getBoundingClientRect();
-    const steps = this.get().bars * 16;
+    const steps = Math.min(this.viewBars,this.get().bars-this.startBar) * 16;
     const cw = (r.width - KEY_W) / steps;
     return { r, steps, cw, pad: 6 };
   }
@@ -40,8 +42,8 @@ export class VelocityLane {
   /** ポインターの列にあるノートのうち、棒の先端がポインターに一番近いもの */
   private pick(e: PointerEvent): Note | null {
     const { r, cw, pad } = this.geom();
-    const step = Math.floor((e.clientX - r.left - KEY_W) / cw);
-    const notes = this.get().tracks[this.track()].notes.filter((n) => n.step === step);
+    const step = (e.clientX-r.left-KEY_W)/cw+this.startBar*16;
+    const notes = this.get().tracks[this.track()].notes.filter((n) => Math.abs(n.step-step)*cw<=6);
     if (!notes.length) return null;
     const h = r.height - pad * 2;
     const y = e.clientY - r.top;
@@ -96,7 +98,8 @@ export class VelocityLane {
     const h = r.height - pad * 2;
     const t = this.get().tracks[this.track()];
     const bar = (n: Note, vel: number, color: string, alpha: number) => {
-      const x = KEY_W + n.step * cw + Math.max(1, cw * 0.2);
+      if(n.step<this.startBar*16||n.step>=(this.startBar+this.viewBars)*16)return;
+      const x = KEY_W + (n.step-this.startBar*16) * cw - 2;
       const w = Math.max(2, Math.min(cw * 0.6, 8));
       const top = pad + h * (1 - vel);
       c.globalAlpha = alpha;

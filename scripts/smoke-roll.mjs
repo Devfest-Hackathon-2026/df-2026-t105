@@ -1,3 +1,4 @@
+import {editorProject} from "./fixtures/editor-project.mjs";
 // ピアノロールの編集操作（移動・リサイズ・Esc 取り消し・クリック削除・カーソル）をブラウザで通す。API は呼ばない。
 // usage: node scripts/smoke-roll.mjs
 import { chromium } from "playwright";
@@ -5,7 +6,7 @@ import { spawn } from "node:child_process";
 
 const URL = "http://127.0.0.1:5319/";
 const KEY = "ghostnotes.project.v1";
-const LABEL_W = 56; // 左端の鍵盤の幅（roll.ts の KEY_W）
+const LABEL_W = 112; // 左端の鍵盤の幅（roll.ts の KEY_W）
 const RULER_H = 22; // 上の小節の目盛りの高さ（roll.ts の RULER_H）
 const STEPS = 64; // デモ曲は4小節 × 16分
 const TOP_PITCH = 52; // ベースは上が pitch 52、下が 28 の25行
@@ -33,9 +34,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on("pageerror", (e) => console.log("[pageerror]", e.message));
   await page.goto(URL);
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(p=>localStorage.setItem("ghostnotes.project.v1",JSON.stringify(p)),editorProject());
   await page.reload();
   await page.click('button.track-name:has-text("Bass")');
+  await page.selectOption("#grid","1");
   // 初回読み込みでは localStorage にまだ保存されていないので、無害な操作（ミュート→戻す）で保存させる
   await page.click(".track:first-child .mute");
   await page.click(".track:first-child .mute");

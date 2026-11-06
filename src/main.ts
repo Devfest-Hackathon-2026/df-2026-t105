@@ -73,7 +73,7 @@ const keySel = $<HTMLSelectElement>("key");
 keySel.innerHTML = NOTE_NAMES.map((n) => `<option value="${n}">${n} メジャー / ${NOTE_NAMES[(NOTE_NAMES.indexOf(n) + 9) % 12]} マイナー</option>`).join("");
 keySel.value = project.root;
 keySel.onchange = () => { project.root = keySel.value; commit(); };
-const barsSel = $<HTMLSelectElement>("bars");
+const barsSel = $<HTMLInputElement>("bars");
 barsSel.value = String(project.bars);
 // 短くしたときも、ループの外に出た音は消さずに残す（長さを戻すか、元に戻すで復活する）
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-bars]")) {
@@ -84,12 +84,21 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("[data-bars]")) {
   };
 }
 barsSel.onchange = () => {
-  project.bars = Number(barsSel.value);
+  project.bars = Math.max(1,Math.floor(Number(barsSel.value)||1));
+  barsSel.value=String(project.bars);
   engine.setBars(project.bars);
-  for (const t of Object.values(project.tracks)) { t.ghost = null; t.alts = null; }
-  engine.setLyria(null);
   commit();
 };
+$("extendBars").onclick=()=>{barsSel.value=String(project.bars+8);barsSel.dispatchEvent(new Event("change"))};
+const viewStart=$<HTMLInputElement>("viewStart"),viewBars=$<HTMLSelectElement>("viewBars"),timeline=$<HTMLInputElement>("timeline");
+function moveView(bar:number){roll.startBar=Math.max(0,Math.min(project.bars-1,Math.floor(bar)||0));renderAll()}
+viewStart.onchange=()=>moveView(Number(viewStart.value)-1);
+viewBars.onchange=()=>{roll.viewBars=Number(viewBars.value);renderAll()};
+$("playView").onclick=async()=>{stopPreview();engine.stop();try{await engine.start(roll.startBar*16,Math.min(project.bars,roll.startBar+roll.viewBars)*16);renderPlay(true)}catch(e){setStatus((e as Error).message,true)}};
+$("viewPrev").onclick=()=>moveView(roll.startBar-roll.viewBars);
+$("viewNext").onclick=()=>moveView(roll.startBar+roll.viewBars);
+timeline.oninput=()=>moveView(Number(timeline.value));
+$<HTMLSelectElement>("grid").onchange=()=>{roll.snap=Number($<HTMLSelectElement>("grid").value);roll.draw()};
 $("reset").onclick = () => {
   if (!confirmInline($("reset"), "もう一度押すと曲を空にします")) return;
   project = demoProject();
@@ -189,7 +198,7 @@ function drawClip(cv: HTMLCanvasElement, id: TrackId) {
   const span = Math.max(6, hi - lo + 1);
   const cw = r.width / steps, rh = (r.height - 6) / span;
   c.fillStyle = v("--line");
-  for (let b = 1; b < project.bars; b++) c.fillRect(Math.round(b * 16 * cw), 0, 1, r.height);
+  for (let b = 1; cw*16>=4 && b < project.bars; b++) c.fillRect(Math.round(b * 16 * cw), 0, 1, r.height);
   const draw = (n: Note, color: string, a: number) => {
     c.globalAlpha = a;
     c.fillStyle = color;
@@ -200,20 +209,26 @@ function drawClip(cv: HTMLCanvasElement, id: TrackId) {
   c.globalAlpha = 1;
 }
 
+function noteConflicts(id:TrackId,a:Note,b:Note){
+  const t=project.tracks[id];
+  if(t.polyphonic||trackRole(project,id)==="drums")return a.pitch===b.pitch&&Math.abs(a.step-b.step)<1e-7;
+  return a.step<b.step+b.len&&b.step<a.step+a.len&&((id==="lead"||id==="bass")||a.pitch===b.pitch);
+}
+
 export type EditKind = "add" | "remove" | "accept" | "reject" | "move" | "resize";
 
 function onEdit(kind: EditKind, id: TrackId, n: Note, next?: Note) {
   const t = project.tracks[id];
   if ((kind === "move" || kind === "resize") && next) {
-    // ノートを動かす・長さを変える。重なった同じ楽器（ドラム以外は同じトラック）の音は消す
+    // 移動・リサイズでも細かい発音時刻を保持する。
     const steps = project.bars * 16;
     const m: Note = {
       ...next,
-      step: Math.max(0, Math.min(steps - 1, Math.round(next.step))),
-      len: Math.max(1, Math.min(steps - Math.max(0, Math.round(next.step)), Math.round(next.len))),
+      step: Math.max(0, Math.min(steps - 1/960, next.step)),
+      len: Math.max(1/960, Math.min(steps - Math.max(0,next.step), next.len)),
     };
     const others = t.notes.filter((x) => x !== n);
-    t.notes = others.filter((x) => !(x.step < m.step + m.len && m.step < x.step + x.len && (((id === "lead" || id === "bass") && !t.polyphonic) ? true : x.pitch === m.pitch)));
+    t.notes = others.filter((x) => !noteConflicts(id,x,m));
     t.notes.push(m);
     commit();
     return;
@@ -227,8 +242,8 @@ function onEdit(kind: EditKind, id: TrackId, n: Note, next?: Note) {
     t.ghost.notes.splice(i, 1);
     t.ghost.conf.splice(i, 1);
     if (kind === "accept") {
-      // ドラムは同じ位置に違う楽器（キックとハイハットなど）が並ぶので、同じ楽器の重なりだけを消す
-      t.notes = t.notes.filter((x) => !(x.step < n.step + n.len && n.step < x.step + x.len && ((id === "lead" || id === "bass") && !t.polyphonic || x.pitch === n.pitch)));
+      // 既存の同位置・同音だけを置換し、重なった連打の発音は残す。
+      t.notes = t.notes.filter((x) => !noteConflicts(id,x,n));
       t.notes.push(n);
       project.log[t.ghost.logIndex].accepted++;
       t.ghost.accepted++;
@@ -303,6 +318,10 @@ askBtn.onclick = async () => {
   const targetId = targetSel.value as TrackId;
   const target = trackRole(project,targetId);
   const model = modelSel.value;
+  const generationStart=Math.max(0,Math.floor(Number($<HTMLInputElement>("generationStart").value)||1)-1);
+  const generationBars=Math.max(1,Math.min(32,Math.floor(Number($<HTMLInputElement>("generationBars").value)||4)));
+  const startStep=generationStart*16;
+  const requestProject:Project={...project,bars:generationBars,tracks:Object.fromEntries(Object.values(project.tracks).map(t=>[t.id,{...t,notes:t.notes.filter(n=>n.step>=startStep&&n.step<startStep+generationBars*16).map(n=>({...n,step:n.step-startStep}))}]))};
   const intent = intentInput.value.trim() || "この曲に合うシンプルなフレーズ";
   askBtn.disabled = true;
   requestedCount = Math.min(4,Math.max(1,Number(candidateCount.value)||1));
@@ -320,7 +339,7 @@ askBtn.onclick = async () => {
     setStatus("1/3 意図を解釈しています");
     let specs: LyriaSpec[];
     try {
-      specs = await intentToSpecs(apiKey, project, targetId, intent, requestedCount);
+      specs = await intentToSpecs(apiKey, requestProject, targetId, intent, requestedCount);
     } catch (e) {
       console.warn(e);
       const fallback=FALLBACK(target);
@@ -328,9 +347,9 @@ askBtn.onclick = async () => {
     }
     while(specs.length<requestedCount)specs.push(structuredClone(specs[specs.length%Math.max(1,specs.length)]));
     const barSec = (60 / project.bpm) * 4;
-    const seconds = 2 + barSec * (project.bars + 1);
+    const seconds = 2 + barSec * (generationBars + 1);
     // Lyria は既存トラックの音声を聴けないので、音符の内容を英語の説明にしてプロンプトに添える
-    const context = describeForLyria(project, targetId);
+    const context = describeForLyria(requestProject, targetId);
     if (model === "realtime" && modelSel.querySelector<HTMLOptionElement>('option[value="realtime"]')!.disabled) {
       throw new Error("Lyria RealTime が使えない設定です（中継サーバーに AI Studio のキーがない）。設定で別のモデルを選んでください");
     }
@@ -373,11 +392,11 @@ askBtn.onclick = async () => {
     const t = project.tracks[targetId];
     const touched = new Set<TrackId>();
     t.alts = [];
-    roll.track = targetId;
+    roll.track = targetId;roll.startBar=generationStart;
     for (let k = 0; k < specs.length; k++) {
       setStatus(`3/3 案${LABELS[k]}を耳コピしています`);
       if(backend !== "browser") {
-        const src = slice(engine.context,fulls[k],0,Math.min(fulls[k].duration,Math.max(24,2*project.bars*barSec+8)));
+        const src = slice(engine.context,fulls[k],0,Math.min(fulls[k].duration,Math.max(24,2*generationBars*barSec+8)));
         const transcription = await transcribeWithMuscriptorDetailed(await toMono22k(src),22050,[],backend,(text)=>setStatus(`3/3 ${text}`));
         const hits = transcription.notes;
         if(!hits.length)throw new Error("MuScriptorの採譜結果は0音でした。生成音を確認して再試行してください");
@@ -387,18 +406,20 @@ askBtn.onclick = async () => {
         const selected=candidates.find(p=>p.instrument===t.instrument)??candidates.find(p=>p.role===target)??candidates[0];
         if(!selected)throw new Error("対象のトラックに対応する音を拾えませんでした。原音を確認してください");
         const primaryHits=hits.filter(n=>n.instrument===selected.instrument);
-        const prior=cleanToGhost(raw.filter(n=>n.instrument===selected.instrument),{bpm:project.bpm,root:project.root,role:target==="bass"?"bass":"lead",bars:project.bars,conform:model!=="realtime"});
+        const prior=cleanToGhost(raw.filter(n=>n.instrument===selected.instrument),{bpm:project.bpm,root:project.root,role:target==="bass"?"bass":"lead",bars:generationBars,conform:model!=="realtime"});
         const grid=transcription.beatGrid;
         const usableGrid=grid&&Number.isFinite(grid.bpm)&&grid.bpm>0&&Number.isFinite(grid.first_downbeat)&&grid.beats_per_bar===4&&grid.steady!==false;
-        const clock=selectAlignedWindow(primaryHits,{bpm:usableGrid?grid.bpm:prior.sourceBpm,bars:project.bars,audioDuration:src.duration,firstDownbeat:usableGrid?grid.first_downbeat:0,onsetDelay:usableGrid?(grid.onset_delay??0):0});
+        const clock=selectAlignedWindow(primaryHits,{bpm:usableGrid?grid.bpm:prior.sourceBpm,bars:generationBars,audioDuration:src.duration,firstDownbeat:usableGrid?grid.first_downbeat:0,onsetDelay:usableGrid?(grid.onset_delay??0):0});
         const corrected=hits.map(n=>({...n,start:n.start-clock.onsetDelay,end:n.end-clock.onsetDelay}));
-        const parts=notesToParts(corrected,{bpm:clock.sourceBpm,bars:project.bars,startSec:clock.startSec,transpose:prior.transpose??0});
+        const parts=notesToParts(corrected,{bpm:clock.sourceBpm,bars:generationBars,startSec:clock.startSec,transpose:prior.transpose??0});
         if(!parts.length)throw new Error("ループ区間に音符を拾えませんでした");
         const pitched=parts.filter((p)=>p.role!=="drums");
         const primary=target==="drums"?parts.find((p)=>p.role==="drums"):
           pitched.find((p)=>p.instrument===t.instrument)??pitched.find((p)=>p.role===target)??pitched[0];
         if(!primary)throw new Error("対象のトラックに対応する音を拾えませんでした。原音を確認してください");
-        const g:Ghost={notes:primary.notes,conf:primary.notes.map(()=>.5),polyphonic:true,full:fulls[k],startSec:clock.startSec+clock.onsetDelay,sourceBpm:clock.sourceBpm,transpose:prior.transpose,raw:raw.filter((n)=>n.instrument===primary.instrument),ampRatio:0,spec:specs[k],intent,explanation:"",logIndex,label:LABELS[k],proposed:primary.notes.length,accepted:0,model:"MuScriptor"};
+        for(const part of parts)for(const note of part.notes)note.step+=startStep;
+        project.bars=Math.max(project.bars,generationStart+generationBars);barsSel.value=String(project.bars);engine.setBars(project.bars);
+        const g:Ghost={startStep,bars:generationBars,notes:primary.notes,conf:primary.notes.map(()=>.5),polyphonic:true,full:fulls[k],startSec:clock.startSec+clock.onsetDelay,sourceBpm:clock.sourceBpm,transpose:prior.transpose,raw:raw.filter((n)=>n.instrument===primary.instrument),ampRatio:0,spec:specs[k],intent,explanation:"",logIndex,label:LABELS[k],proposed:primary.notes.length,accepted:0,model:"MuScriptor"};
         t.polyphonic=true;t.instrument=primary.instrument;t.role=primary.role;t.name=primary.name;t.preset=`sf:${primary.program}`;
         t.alts!.push(g);touched.add(targetId);
         for(const part of parts.filter(p=>p!==primary)) {
@@ -411,8 +432,10 @@ askBtn.onclick = async () => {
         if(k===0)showAlt(targetId,0);else commit();
       }else{
         let g:Ghost;
-        if(target==="drums")g=await makeDrumGhost(intent,specs[k],fulls[k],logIndex,k,backend);
-        else{const src=model==="realtime"?fulls[k]:slice(engine.context,fulls[k],0,Math.min(fulls[k].duration,Math.max(24,2*project.bars*barSec+8)));const raw=await transcribe(src,(p)=>setStatus(`3/3 耳コピしています ${Math.round(p*100)}%`));g=makeGhost(target,intent,specs[k],fulls[k],raw,logIndex,k,undefined,model!=="realtime");g.model=model}
+        if(target==="drums")g=await makeDrumGhost(intent,specs[k],fulls[k],logIndex,k,backend,generationBars);
+        else{const src=model==="realtime"?fulls[k]:slice(engine.context,fulls[k],0,Math.min(fulls[k].duration,Math.max(24,2*generationBars*barSec+8)));const raw=await transcribe(src,(p)=>setStatus(`3/3 耳コピしています ${Math.round(p*100)}%`));g=makeGhost(target,intent,specs[k],fulls[k],raw,logIndex,k,undefined,model!=="realtime",generationBars);g.model=model}
+        g.startStep=startStep;g.bars=generationBars;for(const note of g.notes)note.step+=startStep;
+        project.bars=Math.max(project.bars,generationStart+generationBars);barsSel.value=String(project.bars);engine.setBars(project.bars);
         t.polyphonic=true;t.alts!.push(g);touched.add(targetId);if(k===0)showAlt(targetId,0);else commit();
       }
     }
@@ -462,11 +485,11 @@ function stopPreview(){previewAudio.pause();if(previewAudio.readyState>0)preview
  * ドラムのゴーストを作る（試験的）。Lyria にドラムだけを叩かせ、帯域ごとの音の立ち上がりから
  * キック・スネア・ハイハットの位置を拾う。basic-pitch は音の高さを持つ楽器向けなので使わない。
  */
-async function makeDrumGhost(intent: string, spec: LyriaSpec, full: AudioBuffer, logIndex: number, k: number, backend: "browser" | "cpu" | "a100"): Promise<Ghost> {
+async function makeDrumGhost(intent: string, spec: LyriaSpec, full: AudioBuffer, logIndex: number, k: number, backend: "browser" | "cpu" | "a100", bars=project.bars): Promise<Ghost> {
   const mono = await toMono22k(full);
   if (backend !== "browser") {
       const hits = await transcribeWithMuscriptor(mono, 22050, ["drums"], backend);
-      const { notes, startSec } = drumsToGhost(hits, project.bpm, project.bars);
+      const { notes, startSec } = drumsToGhost(hits, project.bpm, bars);
       return {
         notes, conf: notes.map(() => 0.8), full, startSec, sourceBpm: project.bpm, raw: [], ampRatio: 0.5,
         spec, intent, explanation: "", logIndex, label: LABELS[k], proposed: notes.length, accepted: 0, model: "muscriptor",
@@ -475,7 +498,7 @@ async function makeDrumGhost(intent: string, spec: LyriaSpec, full: AudioBuffer,
   }
   const startSec = estimateStartSec(mono, 22050, project.bpm);
   const g: Ghost = {
-    notes: [], conf: [], full, startSec, sourceBpm: project.bpm, raw: [], mono, ampRatio: 0.5,
+    bars, notes: [], conf: [], full, startSec, sourceBpm: project.bpm, raw: [], mono, ampRatio: 0.5,
     spec, intent, explanation: "", logIndex, label: LABELS[k], proposed: 0, accepted: 0,
   };
   redetectDrums(g, 0.5);
@@ -485,11 +508,11 @@ async function makeDrumGhost(intent: string, spec: LyriaSpec, full: AudioBuffer,
 function redetectDrums(g: Ghost, sensitivity: number) {
   if (!g.mono) return; // muscriptor で拾ったドラムは、感度で拾い直さない
   g.ampRatio = sensitivity;
-  const all = transcribeDrums(g.mono!, 22050, { bpm: g.sourceBpm, startSec: g.startSec, bars: project.bars, sensitivity })
+  const all = transcribeDrums(g.mono!, 22050, { bpm: g.sourceBpm, startSec: g.startSec, bars: g.bars??project.bars, sensitivity })
     .filter((n) => n.vel >= 0.15);
   // 低音域にベースが混ざると、キックをほぼ全ステップで拾ってしまう。キックとスネアは強い順に半分のステップまでに絞る
   // （評価用の音源では、4小節あたり 11〜24 音だった）
-  const cap = project.bars * 8;
+  const cap = (g.bars??project.bars) * 8;
   g.notes = [36, 38, 42]
     .flatMap((p) => {
       const hits = all.filter((n) => n.pitch === p).sort((a, b) => b.vel - a.vel);
@@ -504,8 +527,9 @@ function makeGhost(
   target: "lead" | "bass", intent: string, spec: LyriaSpec, full: AudioBuffer, raw: Ghost["raw"], logIndex: number, k: number,
   fixed?: { startSec: number; sourceBpm: number; transpose?: number },
   conform = false,
+  bars = project.bars,
 ): Ghost {
-  const res = cleanToGhost(raw, { bpm: project.bpm, root: project.root, role: target, bars: project.bars, conform, ...(fixed ?? {}) });
+  const res = cleanToGhost(raw, { bpm: project.bpm, root: project.root, role: target, bars, conform, ...(fixed ?? {}) });
   const dk = res.detectedKey as { tonic: number; mode: string } | null;
   return {
     notes: res.notes, conf: confidence(res.notes, project.bars * 16), full, startSec: res.startSec, sourceBpm: res.sourceBpm, raw, ampRatio: 0.35,
@@ -608,16 +632,17 @@ function confidence(notes: Note[], steps: number): number[] {
 
 /** Lyria の原音から、ゴーストと同じ4小節を切り出す。演奏のテンポが曲とずれていれば再生速度で合わせる */
 function applyLyriaSlice(g: Ghost) {
-  const sec = (60 / g.sourceBpm) * 4 * project.bars;
-  engine.setLyria(slice(engine.context, g.full, g.startSec, sec), project.bpm / g.sourceBpm, g.transpose ?? 0);
+  const sec = (60 / g.sourceBpm) * 4 * (g.bars??project.bars);
+  engine.setLyria(slice(engine.context, g.full, g.startSec, sec), project.bpm / g.sourceBpm, g.transpose ?? 0,g.startStep??0);
 }
 
 function nudge(d: number) {
   const id = roll.track;
   const g = project.tracks[id].ghost;
   if (!g) return;
-  const steps = project.bars * 16;
-  for (const n of g.notes) n.step = (n.step + d + steps) % steps;
+  const steps = (g.bars??project.bars) * 16;
+  const start=g.startStep??0;
+  for (const n of g.notes) n.step = start+(n.step-start + d + steps) % steps;
   g.notes.sort((a, b) => a.step - b.step);
   g.conf = confidence(g.notes, steps);
   g.startSec -= d * (60 / g.sourceBpm / 4);
@@ -690,12 +715,13 @@ function renderTakes() {
   box.hidden = !alts;
   if (!alts) { box.innerHTML = ""; return; }
   const st = comps[t.id];
-  const bars = project.bars;
+  const bars = Math.min(roll.viewBars,project.bars-roll.startBar);
   box.innerHTML = alts.map((a, k) => `
     <div class="take-lane">
       <button class="take-label" data-take="${k}" aria-pressed="${a === t.ghost}" title="案${a.label}をピアノロールに表示（キー ${k + 1}）"><span class="take-dot"></span>案${a.label}</button>
       <div class="take-bars" style="grid-template-columns: repeat(${bars}, minmax(0, 1fr)); margin-right: 0">
-        ${Array.from({ length: bars }, (_, b) => {
+        ${Array.from({ length: bars }, (_, index) => {
+          const b=roll.startBar+index;
           const n = a.notes.filter((x) => Math.floor(x.step / 16) === b).length;
           const on = st?.from[b] === k;
           return `<button class="take-bar${n ? "" : " empty"}" data-take="${k}" data-bar="${b}" aria-pressed="${on}" title="${b + 1}小節目を案${a.label}の音で置き換える（${n}音）${on ? "。もう一度押すと元に戻す" : ""}"><canvas></canvas><span class="bar-no">${b + 1}</span>${on ? `<svg class="bar-check"><use href="#i-check" /></svg>` : ""}</button>`;
@@ -727,9 +753,12 @@ function drawTakeBar(cv: HTMLCanvasElement, g: Ghost, bar: number) {
 }
 
 function acceptAll() {
-  const g = project.tracks[roll.track].ghost;
-  if (!g) return;
-  for (const n of [...g.notes]) onEdit("accept", roll.track, n);
+  const t=project.tracks[roll.track],g=t.ghost;
+  if(!g||!g.notes.length)return;
+  t.notes=t.notes.filter(existing=>!g.notes.some(note=>noteConflicts(t.id,existing,note))).concat(g.notes);
+  project.log[g.logIndex].accepted+=g.notes.length;g.accepted+=g.notes.length;
+  g.notes=[];g.conf=[];
+  commit();
 }
 function closeGhost(keepReason: boolean) {
   const t = project.tracks[roll.track];
@@ -778,7 +807,7 @@ function renderGhostPanel() {
   for (const b of $("alts").querySelectorAll<HTMLButtonElement>("[data-listen]")) {
     b.onclick = () => {
       const a = alts[Number(b.dataset.listen)];
-      previewWhileWaiting(slice(engine.context, a.full, a.startSec, Math.min(a.full.duration - a.startSec, (60 / a.sourceBpm) * 4 * project.bars)));
+      previewWhileWaiting(slice(engine.context, a.full, a.startSec, Math.min(a.full.duration - a.startSec, (60 / a.sourceBpm) * 4 * (a.bars??project.bars))));
     };
   }
   renderSpec(g.spec);
@@ -790,7 +819,7 @@ function renderGhostPanel() {
   sens.value = String(Math.round((t.id === "drums" ? g.ampRatio : 1 - g.ampRatio) * 100));
   const sure = g.conf.filter((c) => c > 0.6).length;
   const occupied=new Set(g.notes.map(n=>Math.floor(n.step/16))).size;
-  $("ghostSummary").textContent = g.polyphonic?`${g.notes.length}音・音符のある小節 ${occupied}/${project.bars}・採用 ${g.accepted}`:`${g.notes.length}音・確からしい音 ${sure}・採用 ${g.accepted}`;
+  $("ghostSummary").textContent = g.polyphonic?`${g.notes.length}音・音符のある小節 ${occupied}/${g.bars??project.bars}・採用 ${g.accepted}`:`${g.notes.length}音・確からしい音 ${sure}・採用 ${g.accepted}`;
   if(g.polyphonic)$("spec").insertAdjacentHTML("beforeend",`<div class="params">原音の開始 ${g.startSec.toFixed(2)}秒・推定 ${g.sourceBpm.toFixed(1)} BPM</div>`);
   $("explain").textContent = g.explanation;
   $("explainDetails").hidden = !g.explanation;
@@ -849,6 +878,10 @@ function confirmInline(btn: HTMLElement, msg: string) {
 }
 
 function renderAll() {
+  roll.startBar=Math.max(0,Math.min(roll.startBar,project.bars-1));
+  viewStart.value=String(roll.startBar+1);viewStart.max=String(project.bars);
+  timeline.max=String(Math.max(0,project.bars-1));timeline.value=String(roll.startBar);
+  vel.startBar=roll.startBar;vel.viewBars=roll.viewBars;
   renderTracks();
   renderTakes();
   renderGhostPanel();

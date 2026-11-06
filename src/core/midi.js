@@ -61,7 +61,7 @@ export function toMidiFile(tracks, { bpm, ppq = 480 }) {
       const vel = Math.max(1, Math.min(127, Math.round(n.vel * 127)));
       const pitch = n.pitch & 0x7f;
       ev.push([tick(n.step), 1, [0x90 | ch, pitch, vel]]);
-      ev.push([tick(n.step + Math.max(1, n.len)), 0, [0x80 | ch, pitch, 0x40]]);
+      ev.push([Math.max(tick(n.step)+1,tick(n.step + n.len)), 0, [0x80 | ch, pitch, 0x40]]);
     }
     // 同じティックではノートオフを先にする（同じ音の再発音で前の音が鳴りっぱなしにならないように）
     ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);

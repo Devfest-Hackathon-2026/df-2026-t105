@@ -148,8 +148,8 @@ export class Engine {
     const sixteenth = Tone.Time("16n").toSeconds();
     Tone.getDraw().schedule(() => this.onStep(step), time);
     for (const t of audibleTracks(p)) {
-      for (const n of t.notes) if (n.step === step) this.trigger(t, n, time, sixteenth, false);
-      if (this.mode === "B" && t.ghost) for (const n of t.ghost.notes) if (n.step === step) this.trigger(t, n, time, sixteenth, true);
+      for (const n of t.notes) if (n.step >= step && n.step < step+1) this.trigger(t, n, time+(n.step-step)*sixteenth, sixteenth, false);
+      if (this.mode === "B" && t.ghost) for (const n of t.ghost.notes) if (n.step >= step && n.step < step+1) this.trigger(t, n, time+(n.step-step)*sixteenth, sixteenth, true);
     }
   }
 
@@ -161,7 +161,7 @@ export class Engine {
    * rate: 曲のテンポ ÷ 演奏のテンポ。再生速度を変えるので音の高さも 12·log2(rate) 半音ずれる。
    * semitones: 原音を曲のキーに合わせるために動かす半音数。速度によるずれも打ち消して、合計をピッチシフトで補う。
    */
-  setLyria(buf: AudioBuffer | null, rate = 1, semitones = 0) {
+  setLyria(buf: AudioBuffer | null, rate = 1, semitones = 0, startStep = 0) {
     this.lyria?.unsync().dispose();
     this.lyria = null;
     this.shifter?.dispose();
@@ -176,9 +176,9 @@ export class Engine {
       this.lyria.connect(this.lyriaGain);
     }
     this.lyria.playbackRate = rate;
-    this.lyria.loop = true;
+    this.lyria.loop = false;
     this.lyria.loopEnd = buf.duration;
-    this.lyria.sync().start(0);
+    this.lyria.sync().start(`${Math.round(startStep * Tone.getTransport().PPQ / 4)}i`);
     this.applyMode();
   }
 
@@ -186,7 +186,7 @@ export class Engine {
     this.lyriaGain.gain.value = this.mode === "L" ? 0.8 : 0;
   }
 
-  async start() {
+  async start(startStep=0,endStep=this.get().bars*16) {
     await Tone.start();
     await this.soundfont.ready(Object.values(this.get().tracks));
     this.soundfont.resume();
@@ -194,10 +194,10 @@ export class Engine {
     const tr = Tone.getTransport();
     tr.bpm.value = p.bpm;
     tr.loop = true;
-    tr.loopStart = 0;
-    tr.loopEnd = `${p.bars}m`;
+    tr.loopStart = `${Math.round(startStep*tr.PPQ/4)}i`;
+    tr.loopEnd = `${Math.round(endStep*tr.PPQ/4)}i`;
     this.applyMode();
-    tr.start("+0.05", 0);
+    tr.start("+0.05", `${Math.round(startStep*tr.PPQ/4)}i`);
   }
   stop() {
     Tone.getTransport().stop();
@@ -217,7 +217,9 @@ export class Engine {
     this.trigger(this.get().tracks[id], { step: 0, len: 2, pitch, vel: 0.8 }, Tone.now() + 0.01, 60 / this.get().bpm / 4, false);
   }
   setBars(bars: number) {
-    Tone.getTransport().loopEnd = `${bars}m`;
+    const tr=Tone.getTransport();
+    tr.loopStart=0;tr.loopEnd=`${bars}m`;
+    if(tr.seconds>=Tone.Time(`${bars}m`).toSeconds())tr.seconds=0;
   }
   get context() {
     return Tone.getContext().rawContext as AudioContext;
