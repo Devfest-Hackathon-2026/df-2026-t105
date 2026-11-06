@@ -69,6 +69,13 @@ keySel.onchange = () => { project.root = keySel.value; commit(); };
 const barsSel = $<HTMLSelectElement>("bars");
 barsSel.value = String(project.bars);
 // 短くしたときも、ループの外に出た音は消さずに残す（長さを戻すか、元に戻すで復活する）
+for (const b of document.querySelectorAll<HTMLButtonElement>("[data-bars]")) {
+  b.onclick = () => {
+    if (barsSel.value === b.dataset.bars) return;
+    barsSel.value = b.dataset.bars!;
+    barsSel.dispatchEvent(new Event("change"));
+  };
+}
 barsSel.onchange = () => {
   project.bars = Number(barsSel.value);
   engine.setBars(project.bars);
@@ -116,6 +123,7 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("[data-mode]")) {
 }
 function renderModes() {
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === engine.mode));
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-bars]")) b.setAttribute("aria-pressed", String(Number(b.dataset.bars) === project.bars));
 }
 
 // ---------- トラック ----------
@@ -615,12 +623,12 @@ function renderTakes() {
   const bars = project.bars;
   box.innerHTML = alts.map((a, k) => `
     <div class="take-lane">
-      <button class="take-label" data-take="${k}" aria-pressed="${a === t.ghost}" title="案${a.label}をピアノロールに表示（キー ${k + 1}）">案${a.label}</button>
+      <button class="take-label" data-take="${k}" aria-pressed="${a === t.ghost}" title="案${a.label}をピアノロールに表示（キー ${k + 1}）"><span class="take-dot"></span>案${a.label}</button>
       <div class="take-bars" style="grid-template-columns: repeat(${bars}, minmax(0, 1fr)); margin-right: 0">
         ${Array.from({ length: bars }, (_, b) => {
           const n = a.notes.filter((x) => Math.floor(x.step / 16) === b).length;
           const on = st?.from[b] === k;
-          return `<button class="take-bar${n ? "" : " empty"}" data-take="${k}" data-bar="${b}" aria-pressed="${on}" title="${b + 1}小節目を案${a.label}の音で置き換える（${n}音）${on ? "。もう一度押すと元に戻す" : ""}"><canvas></canvas></button>`;
+          return `<button class="take-bar${n ? "" : " empty"}" data-take="${k}" data-bar="${b}" aria-pressed="${on}" title="${b + 1}小節目を案${a.label}の音で置き換える（${n}音）${on ? "。もう一度押すと元に戻す" : ""}"><canvas></canvas><span class="bar-no">${b + 1}</span>${on ? `<svg class="bar-check"><use href="#i-check" /></svg>` : ""}</button>`;
         }).join("")}
       </div>
     </div>`).join("");
@@ -683,10 +691,25 @@ function renderGhostPanel() {
   panel.hidden = !g;
   if (!g) return;
   const alts = t.alts ?? [g];
-  $("alts").innerHTML = alts.map((a, k) =>
-    `<button data-alt="${k}" aria-pressed="${a === g}"><span class="take-name">案${a.label}</span> ${esc(a.spec.title ?? "")}${a.accepted ? ` <span class="badge">採用 ${a.accepted}</span>` : ""}</button>`,
-  ).join("") + (alts.length < 2 && askBtn.disabled ? `<span class="hint">案Bを準備中…</span>` : "");
-  for (const b of $("alts").querySelectorAll<HTMLButtonElement>("[data-alt]")) b.onclick = () => showAlt(t.id, Number(b.dataset.alt));
+  const compBars = (k: number) => Object.values(comps[t.id]?.from ?? {}).filter((x) => x === k).length;
+  $("alts").innerHTML = alts.map((a, k) => {
+    const nb = compBars(k);
+    return `<div class="take-card" data-alt="${k}" aria-current="${a === g}">
+      <div class="take-card-head">
+        <button class="take-pick" data-alt="${k}" aria-pressed="${a === g}"><span class="take-dot"></span><b>案${a.label}</b>「${esc(a.spec.title ?? "")}」</button>
+        ${nb ? `<span class="badge">${nb}小節採用</span>` : a.accepted ? `<span class="badge">${a.accepted}音採用</span>` : ""}
+        <button class="icon-btn listen" data-listen="${k}" title="案${a.label}の原音を聴く" aria-label="案${a.label}の原音を聴く"><svg><use href="#i-speaker" /></svg></button>
+      </div>
+      <p class="take-why">${esc(a.spec.rationale)}</p>
+    </div>`;
+  }).join("") + (alts.length < 2 && askBtn.disabled ? `<span class="hint">案Bを準備中</span>` : "");
+  for (const b of $("alts").querySelectorAll<HTMLButtonElement>(".take-pick")) b.onclick = () => showAlt(t.id, Number(b.dataset.alt));
+  for (const b of $("alts").querySelectorAll<HTMLButtonElement>("[data-listen]")) {
+    b.onclick = () => {
+      const a = alts[Number(b.dataset.listen)];
+      previewWhileWaiting(slice(engine.context, a.full, a.startSec, Math.min(a.full.duration - a.startSec, (60 / a.sourceBpm) * 4 * project.bars)));
+    };
+  }
   renderSpec(g.spec);
   if (g.detectedKey !== undefined) {
     const tp = g.transpose ?? 0;
@@ -701,8 +724,12 @@ function renderGhostPanel() {
 function renderLog() {
   const box = $("log");
   if (!project.log.length) { box.innerHTML = `<p class="hint">まだありません</p>`; return; }
-  box.innerHTML = [...project.log].reverse().map((e) => `<li><div><b>${project.tracks[e.track]?.name ?? e.track}</b> ・ ${new Date(e.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ・ 提案 ${e.proposed} 音中 ${e.accepted} 音を採用</div>
-  <div class="intent">意図: ${esc(e.intent)}${e.model ? `（${esc(e.model)}）` : ""}</div>${e.titles ? `<div class="intent">比べた案: ${e.titles.map(esc).join(" ／ ")}${e.chosen ? `（採用: 案${esc(e.chosen)}）` : ""}</div>` : ""}${e.reason ? `<div class="reason">理由: ${esc(e.reason)}</div>` : ""}</li>`).join("");
+  box.innerHTML = [...project.log].reverse().map((e) => {
+    const time = new Date(e.at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+    const what = e.chosen ? `採用 案${esc(e.chosen)}` : e.accepted ? `採用 ${e.accepted}音` : "見送り";
+    return `<li><div class="log-line"><span class="log-time">${time}</span><b class="${e.chosen || e.accepted ? "log-yes" : "log-no"}">${what}</b><span>${project.tracks[e.track]?.name ?? e.track}・${e.accepted}/${e.proposed}音</span></div>
+      ${e.reason ? `<div class="reason">${esc(e.reason)}</div>` : ""}<div class="intent">${esc(e.intent)}${e.model ? `（${esc(e.model)}）` : ""}${e.titles ? `<br>${e.titles.map(esc).join(" ／ ")}` : ""}</div></li>`;
+  }).join("");
 }
 
 const sens = $<HTMLInputElement>("sens");
