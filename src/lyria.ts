@@ -144,10 +144,9 @@ export function buildClipPrompt(spec: LyriaSpec, o: { bpm: number; keyName: stri
 export async function generateClip(
   apiKey: string,
   o: { model: ClipModel; prompt: string; ctx: AudioContext },
-): Promise<{ buffer: AudioBuffer; text: string }> {
-  const url = apiKey
-    ? `https://generativelanguage.googleapis.com/v1beta/models/${o.model}:generateContent`
-    : `${location.origin}/api/gemini/${o.model}`;
+): Promise<{ buffer: AudioBuffer; text: string; model: string }> {
+  if (!apiKey) return generateClipViaServer(o);
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${o.model}:generateContent`;
   let lastErr = "";
   for (let attempt = 0; attempt < 3; attempt++) {
     const r = await fetch(url, {
@@ -168,7 +167,41 @@ export async function generateClip(
     const bin = atob(audio.inlineData!.data);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return { buffer: await o.ctx.decodeAudioData(bytes.buffer), text };
+    return { buffer: await o.ctx.decodeAudioData(bytes.buffer), text, model: j.modelVersion ?? o.model };
   }
   throw new Error(lastErr || `${o.model} の生成に失敗しました`);
+}
+
+/** 中継サーバーの /api/music に頼む。サーバーが AI Studio と Vertex のどちらを使うかは画面からは見えない */
+async function generateClipViaServer(o: { model: ClipModel; prompt: string; ctx: AudioContext }) {
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await fetch(`${location.origin}/api/music/${o.model}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: o.prompt }),
+    });
+    if (!r.ok) {
+      lastErr = `作曲に失敗しました（${r.status}）: ${(await r.text()).slice(0, 200)}`;
+      if ([400, 402, 403, 429].includes(r.status)) break;
+      continue;
+    }
+    const j: { audio: string | null; mime: string | null; text: string; model: string } = await r.json();
+    if (!j.audio) { lastErr = `${j.model} が音声を返しませんでした`; continue; }
+    const bin = atob(j.audio);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { buffer: await o.ctx.decodeAudioData(bytes.buffer), text: j.text, model: j.model };
+  }
+  throw new Error(lastErr || "作曲に失敗しました");
+}
+
+/** 中継サーバーが使えるモデル。サーバーなしの開発（キーを画面に入れる）では null */
+export async function serverConfig(): Promise<{ backend: string; realtime: boolean; musicModels: Record<string, string> } | null> {
+  try {
+    const r = await fetch(`${location.origin}/api/config`);
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  }
 }

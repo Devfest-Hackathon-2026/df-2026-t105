@@ -1,8 +1,16 @@
-// 公開用の中継サーバー。API キーはこのサーバーだけが持ち、ブラウザには渡さない。
+// 公開用の中継サーバー。API キーや GCP の認証はこのサーバーだけが持ち、ブラウザには渡さない。
 // - GET  /*                       : ビルド済みの画面（dist/）を返す
+// - GET  /api/config              : どのモデルが使えるか（画面がモデルの選択肢を決めるのに使う）
 // - POST /api/gemini/:model       : Gemini の generateContent を中継する（許可したモデルだけ）
-// - WS   /ws/...BidiGenerateMusic : Lyria RealTime の WebSocket を中継する
+// - POST /api/music/:model        : Lyria 3.5 / 3 Pro / 3 Clip で作曲し、{ audio, mime, text, model } を返す
+// - WS   /ws/...BidiGenerateMusic : Lyria RealTime の WebSocket を中継する（AI Studio のキーがあるときだけ）
 // Lyria RealTime は短時間トークン（ephemeral token）を受け付けないため、中継が必要になる（docs/経緯と設計.md 8章）。
+//
+// 呼び出し先は2通り。
+// - AI Studio（GEMINI_API_KEY）: generativelanguage.googleapis.com。Lyria 3.5 と RealTime が使える
+// - Vertex AI / Agent Platform（VERTEX_PROJECT）: aiplatform.googleapis.com。ハッカソンの GCP クレジットはこちらに使える。
+//   Lyria は 3 Pro と 3 Clip（interactions API）。認証は Cloud Run ならサービスアカウント、手元なら gcloud のトークン
+// 両方を設定したときは、作曲と Gemini は Vertex、RealTime は AI Studio を使う。
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
@@ -11,17 +19,26 @@ import { WebSocketServer, WebSocket } from "ws";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const KEY = process.env.GEMINI_API_KEY;
-if (!KEY) {
-  console.error("GEMINI_API_KEY が設定されていません");
+const VERTEX_PROJECT = process.env.VERTEX_PROJECT;
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION ?? "global";
+// Vertex で使う Gemini のモデル（AI Studio の gemini-flash-latest のような別名は Vertex にはない）
+const VERTEX_GEMINI_MODEL = process.env.VERTEX_GEMINI_MODEL ?? "gemini-2.5-flash";
+if (!KEY && !VERTEX_PROJECT) {
+  console.error("GEMINI_API_KEY か VERTEX_PROJECT のどちらかを設定してください");
   process.exit(1);
 }
+const BACKEND = VERTEX_PROJECT ? "vertex" : "aistudio";
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
-const ALLOWED_MODELS = new Set(["gemini-flash-latest", "gemini-3.5-flash-lite", "lyria-3.5", "lyria-3-clip-preview"]);
+const ALLOWED_MODELS = new Set(["gemini-flash-latest", "gemini-3.5-flash-lite"]);
+// 画面が指定する作曲モデル → 実際に呼ぶモデル。Vertex には 3.5 がないので 3 Pro で代える
+const MUSIC_MODELS = BACKEND === "vertex"
+  ? { "lyria-3.5": "lyria-3-pro-preview", "lyria-3-pro-preview": "lyria-3-pro-preview", "lyria-3-clip-preview": "lyria-3-clip-preview" }
+  : { "lyria-3.5": "lyria-3.5", "lyria-3-pro-preview": "lyria-3-pro-preview", "lyria-3-clip-preview": "lyria-3-clip-preview" };
 const MAX_MUSIC_SEC = 60;
 
 // IP ごとの簡易な回数制限（Cloud Run のインスタンス内だけで数える）
 const WINDOW_MS = 10 * 60 * 1000;
-const LIMITS = { gemini: 60, music: 15 };
+const LIMITS = { gemini: 60, music: 15, compose: 20 };
 const hits = new Map();
 function allow(ip, kind) {
   const now = Date.now();
@@ -59,29 +76,112 @@ async function serveStatic(req, res) {
   }
 }
 
-async function proxyGemini(req, res, model) {
-  if (!ALLOWED_MODELS.has(model)) { res.writeHead(400).end("model not allowed"); return; }
-  if (!allow(clientIp(req), "gemini")) { res.writeHead(429).end("too many requests"); return; }
+async function readBody(req, limit) {
   const chunks = [];
   let size = 0;
   for await (const c of req) {
     size += c.length;
-    if (size > 256 * 1024) { res.writeHead(413).end("too large"); return; }
+    if (size > limit) return null;
     chunks.push(c);
   }
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": KEY },
-    body: Buffer.concat(chunks),
-  });
+  return Buffer.concat(chunks);
+}
+
+// ---- Vertex の認証。Cloud Run ではメタデータサーバー、手元では gcloud からアクセストークンを取る ----
+let tokenCache = { token: "", exp: 0 };
+async function vertexToken() {
+  if (tokenCache.token && Date.now() < tokenCache.exp - 60_000) return tokenCache.token;
+  try {
+    const r = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", {
+      headers: { "Metadata-Flavor": "Google" }, signal: AbortSignal.timeout(1500),
+    });
+    if (r.ok) {
+      const j = await r.json();
+      tokenCache = { token: j.access_token, exp: Date.now() + j.expires_in * 1000 };
+      return tokenCache.token;
+    }
+  } catch {}
+  const { execFileSync } = await import("node:child_process");
+  const token = execFileSync("gcloud", ["auth", "print-access-token"], { encoding: "utf8" }).trim();
+  tokenCache = { token, exp: Date.now() + 30 * 60_000 };
+  return token;
+}
+const vertexBase = () => `https://aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}`;
+
+async function proxyGemini(req, res, model) {
+  if (!ALLOWED_MODELS.has(model)) { res.writeHead(400).end("model not allowed"); return; }
+  if (!allow(clientIp(req), "gemini")) { res.writeHead(429).end("too many requests"); return; }
+  const body = await readBody(req, 256 * 1024);
+  if (!body) { res.writeHead(413).end("too large"); return; }
+  let r;
+  if (BACKEND === "vertex") {
+    // Vertex の generateContent は AI Studio と同じ形の本文を受け取る。thinkingLevel は Gemini 3 系だけなので外す
+    const j = JSON.parse(body.toString());
+    if (!VERTEX_GEMINI_MODEL.startsWith("gemini-3")) delete j.generationConfig?.thinkingConfig;
+    r = await fetch(`${vertexBase()}/publishers/google/models/${VERTEX_GEMINI_MODEL}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${await vertexToken()}` },
+      body: JSON.stringify(j),
+    });
+  } else {
+    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": KEY },
+      body,
+    });
+  }
   res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") ?? "application/json" });
   res.end(Buffer.from(await r.arrayBuffer()));
+}
+
+/** 作曲。AI Studio は generateContent、Vertex は interactions API。どちらも { audio(base64), mime, text, model } にそろえて返す */
+async function compose(req, res, requested) {
+  const model = MUSIC_MODELS[requested];
+  if (!model) { res.writeHead(400).end("model not allowed"); return; }
+  if (!allow(clientIp(req), "compose")) { res.writeHead(429).end("too many requests"); return; }
+  const body = await readBody(req, 16 * 1024);
+  if (!body) { res.writeHead(413).end("too large"); return; }
+  const { prompt } = JSON.parse(body.toString());
+  if (typeof prompt !== "string" || !prompt.trim()) { res.writeHead(400).end("prompt required"); return; }
+  let out;
+  if (BACKEND === "vertex") {
+    const r = await fetch(`${vertexBase()}/interactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${await vertexToken()}` },
+      body: JSON.stringify({ model, input: [{ type: "user_input", content: [{ type: "text", text: prompt }] }] }),
+    });
+    if (!r.ok) { res.writeHead(r.status, { "Content-Type": "text/plain" }).end((await r.text()).slice(0, 500)); return; }
+    const j = await r.json();
+    const contents = (j.steps ?? []).flatMap((s) => s.content ?? []);
+    const audio = contents.find((c) => c.type === "audio" && c.data);
+    out = { audio: audio?.data ?? null, mime: audio?.mime_type ?? null, text: contents.filter((c) => c.type === "text").map((c) => c.text).join("\n"), model };
+  } else {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": KEY },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["AUDIO", "TEXT"] } }),
+    });
+    if (!r.ok) { res.writeHead(r.status, { "Content-Type": "text/plain" }).end((await r.text()).slice(0, 500)); return; }
+    const j = await r.json();
+    const parts = j.candidates?.[0]?.content?.parts ?? [];
+    const audio = parts.find((p) => p.inlineData?.data);
+    out = { audio: audio?.inlineData.data ?? null, mime: audio?.inlineData.mimeType ?? null, text: parts.filter((p) => p.text).map((p) => p.text).join("\n"), model: j.modelVersion ?? model };
+  }
+  res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(out));
 }
 
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://x");
     if (url.pathname === "/healthz") { res.writeHead(200).end("ok"); return; }
+    if (url.pathname === "/api/config") {
+      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
+        backend: BACKEND, realtime: !!KEY, music: Object.keys(MUSIC_MODELS), musicModels: MUSIC_MODELS,
+      }));
+      return;
+    }
+    const mm = /^\/api\/music\/([\w.-]+)$/.exec(url.pathname);
+    if (mm && req.method === "POST") return await compose(req, res, mm[1]);
     const m = /^\/api\/gemini\/([\w.-]+)$/.exec(url.pathname);
     if (m && req.method === "POST") return await proxyGemini(req, res, m[1]);
     if (req.method === "GET" || req.method === "HEAD") return await serveStatic(req, res);
@@ -102,7 +202,7 @@ server.on("upgrade", (req, socket, head) => {
   // "//ws/..." を new URL に渡すとホスト名として解釈されるので、パスは文字列のまま切り出す
   const m = MUSIC_PATH.exec((req.url ?? "").split("?")[0]);
   const ip = clientIp(req);
-  if (!m) { socket.destroy(); return; }
+  if (!m || !KEY) { socket.destroy(); return; }
   if ((open.get(ip) ?? 0) >= 2 || !allow(ip, "music")) {
     socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
     socket.destroy();

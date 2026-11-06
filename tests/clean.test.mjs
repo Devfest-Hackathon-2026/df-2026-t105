@@ -66,3 +66,15 @@ test("conform: D メジャーで弾かれたフレーズを C メジャーの曲
   assert.equal(r.transpose, -2);
   for (const n of r.notes) assert.ok([0, 2, 4, 5, 7, 9, 11].includes(n.pitch % 12), `スケール外の音 ${n.pitch}`);
 });
+
+test("conform: 曲と同じキーで弾かれていれば、音が6つ共通する別のキーと取り違えて移調しない", async () => {
+  const { cleanToGhost } = await import("../src/core/clean.js");
+  const step = 60 / 120 / 4;
+  // G メジャーのベースライン（C を一度も使わない。D メジャーとも矛盾しない）
+  const g = [43, 43, 50, 47, 45, 45, 52, 50, 43, 47, 50, 55, 54, 50, 47, 45];
+  const raw = Array.from({ length: 48 }, (_, i) => ({
+    startTimeSeconds: 2.5 + i * 2 * step, durationSeconds: step * 1.8, pitchMidi: g[i % g.length], amplitude: 0.8,
+  }));
+  const r = cleanToGhost(raw, { bpm: 120, root: "G", role: "bass", bars: 4, conform: true });
+  assert.equal(r.transpose, 0);
+});

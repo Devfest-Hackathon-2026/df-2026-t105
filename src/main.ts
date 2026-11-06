@@ -4,7 +4,7 @@ import { downloadBytes, encodeWav } from "./wav";
 import { cleanToGhost, estimateKey, NOTE_NAMES } from "./core/clean.js";
 import { downloadMidi, toMidiFile } from "./core/midi.js";
 import { explainGhost, intentToSpecs } from "./gemini";
-import { buildClipPrompt, generate, generateClip, slice, type ClipModel } from "./lyria";
+import { buildClipPrompt, generate, generateClip, serverConfig, slice, type ClipModel } from "./lyria";
 import { Roll } from "./roll";
 import { demoProject, load, save, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
 import { toMono22k, transcribe, warmUp } from "./transcribe";
@@ -165,6 +165,19 @@ const MODEL_HINTS: Record<string, string> = {
 };
 const showModelHint = () => { $("modelHint").textContent = MODEL_HINTS[modelSel.value] ?? ""; };
 showModelHint();
+// 中継サーバーが Vertex を使うときは 3.5 の代わりに 3 Pro になり、AI Studio のキーがなければ RealTime は使えない
+void serverConfig().then((c) => {
+  if (!c) return;
+  const opt35 = modelSel.querySelector<HTMLOptionElement>('option[value="lyria-3.5"]')!;
+  if (c.musicModels["lyria-3.5"] === "lyria-3-pro-preview") {
+    opt35.textContent = "Lyria 3 Pro（音質重視・Vertex）";
+    MODEL_HINTS["lyria-3.5"] = "Vertex AI の Lyria 3 Pro。テンポとキーは指定どおりにならないことがあるので、耳コピのあとで曲に合わせる";
+  }
+  const rt = modelSel.querySelector<HTMLOptionElement>('option[value="realtime"]')!;
+  rt.disabled = !c.realtime;
+  if (!c.realtime && modelSel.value === "realtime") modelSel.value = "lyria-3.5";
+  showModelHint();
+});
 modelSel.onchange = () => { safeSet(MODEL_KEY, modelSel.value); showModelHint(); };
 
 /** 曲のキーを、ベースとリードの音から「A minor」のような名前にする（Lyria 3.5 へのプロンプト用） */
@@ -210,6 +223,9 @@ askBtn.onclick = async () => {
     const seconds = 2 + barSec * (project.bars + 1);
     // ドラムの検出は曲のテンポで格子に合わせる前提なので、テンポを守る RealTime を使う
     const model = target === "drums" ? "realtime" : modelSel.value;
+    if (model === "realtime" && modelSel.querySelector<HTMLOptionElement>('option[value="realtime"]')!.disabled) {
+      throw new Error("Lyria RealTime が使えない設定です（中継サーバーに AI Studio のキーがない）。ドラムの提案は RealTime が必要です");
+    }
     let fulls: AudioBuffer[];
     if (model === "realtime") {
       const prog = specs.map(() => 0);
@@ -232,6 +248,7 @@ askBtn.onclick = async () => {
         generateClip(apiKey, { model: model as ClipModel, ctx: engine.context, prompt: buildClipPrompt(spec, { bpm: project.bpm, keyName, role: target, seconds: clipSec }) }),
       ));
       fulls = res.map((r) => r.buffer);
+      console.info("作曲に使ったモデル:", res.map((r) => r.model));
       if (res.some((r) => /\[[^\]]*\]\s*[^\[\s]/.test(r.text.replace(/\[\[[^\]]*\]\]/g, "")))) console.warn("歌詞らしきテキストが返った:", res.map((r) => r.text));
     }
 

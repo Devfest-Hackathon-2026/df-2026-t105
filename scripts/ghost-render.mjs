@@ -7,8 +7,11 @@ import { cleanToGhost, NOTE_NAMES } from "../src/core/clean.js";
 const [base, ...rest] = process.argv.slice(2);
 const opt = (k, d) => { const i = rest.indexOf(k); return i >= 0 ? rest[i + 1] : d; };
 const bpm = Number(opt("--bpm", 100)), root = opt("--root", "C"), role = opt("--role", "lead");
+const conform = rest.includes("--conform");
 const { notes: raw } = JSON.parse(readFileSync(`${base}.json`, "utf8"));
-const res = cleanToGhost(raw, { bpm, root, role, bars: 4 });
+const res = cleanToGhost(raw, { bpm, root, role, bars: 4, conform });
+// conform で移調したときは、元の音声と比べるために元の高さに戻して鳴らす
+if (res.transpose) for (const n of res.notes) n.pitch -= res.transpose;
 // 元の音声と比べるため、ゴーストは演奏の実際のテンポ（推定値）で鳴らす
 const step = 60 / res.sourceBpm / 4;
 
@@ -30,7 +33,7 @@ h.write("RIFF", 0); h.writeUInt32LE(36 + pcm.length, 4); h.write("WAVE", 8); h.w
 h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(sr, 24);
 h.writeUInt32LE(sr * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(pcm.length, 40);
 writeFileSync(`${base}.ghost.wav`, Buffer.concat([h, pcm]));
-writeFileSync(`${base}.ghost.json`, JSON.stringify({ bpm, sourceBpm: res.sourceBpm, root, role, startSec: res.startSec, notes: res.notes, dropped: res.dropped }));
+writeFileSync(`${base}.ghost.json`, JSON.stringify({ bpm, sourceBpm: res.sourceBpm, transpose: res.transpose, detectedKey: res.detectedKey, root, role, startSec: res.startSec, notes: res.notes, dropped: res.dropped }));
 
 // 聴き比べ: 元音声の同じ4小節 → 1拍の無音 → 整形後のMIDI → 両方を重ねたもの
 const dur = (64 * step).toFixed(3);
@@ -43,5 +46,5 @@ execFileSync("ffmpeg", ["-v", "error", "-y",
   "-map", "[out]", "-b:a", "160k", `${base}.compare.mp3`]);
 
 const roll = res.notes.map((n) => `${n.step}:${NOTE_NAMES[n.pitch % 12]}${Math.floor(n.pitch / 12) - 1}x${n.len}`).join(" ");
-console.log(JSON.stringify({ base, rawNotes: raw.length, ghostNotes: res.notes.length, sourceBpm: +res.sourceBpm.toFixed(2), startSec: +res.startSec.toFixed(3), dropped: res.dropped }));
+console.log(JSON.stringify({ base, rawNotes: raw.length, ghostNotes: res.notes.length, sourceBpm: +res.sourceBpm.toFixed(2), transpose: res.transpose, key: res.detectedKey ? `${res.detectedKey.tonic}/${res.detectedKey.mode}` : null, startSec: +res.startSec.toFixed(3), dropped: res.dropped }));
 console.log(roll);

@@ -86,6 +86,27 @@ export function transposeAmount(fromRoot, toRoot) {
   return ((((toRoot - fromRoot) % 12) + 12 + 6) % 12) - 6;
 }
 
+/**
+ * 曲のスケールに一番よく収まる移調量を選ぶ。-6〜+5 半音のそれぞれで、スケール内に入る音の量（長さ×音量）の割合を数え、
+ * 最大のものを選ぶ。差が 0.03 以内なら移調量の小さいほう（0 を最優先）にする。
+ * キー推定（estimateKey）だけで決めると、G と D のように音が6つ共通するキーを取り違え、
+ * 正しいキーで弾かれた演奏まで移調してしまうため。
+ * @returns {{ transpose:number, inScale:number, inScaleWithout:number }}
+ */
+export function bestTranspose(notes, root) {
+  const pcs = scalePitchClasses(root);
+  const w = new Array(12).fill(0);
+  for (const n of notes) w[(((n.pitchMidi ?? n.pitch) % 12) + 12) % 12] += (n.durationSeconds ?? n.len ?? 1) * (n.amplitude ?? n.vel ?? 1);
+  const total = w.reduce((a, b) => a + b, 0) || 1;
+  const frac = (t) => w.reduce((s, x, pc) => s + (pcs.includes((pc + t + 12) % 12) ? x : 0), 0) / total;
+  let best = { transpose: 0, inScale: frac(0) };
+  for (const t of [1, -1, 2, -2, 3, -3, 4, -4, 5, -5, -6]) {
+    const f = frac(t);
+    if (f > best.inScale + 0.03) best = { transpose: t, inScale: f };
+  }
+  return { ...best, inScaleWithout: frac(0) };
+}
+
 const ROLE_RANGE = { lead: [57, 84], bass: [28, 52], chords: [48, 79] };
 
 /**
@@ -101,8 +122,7 @@ export function cleanToGhost(rawIn, o) {
   let transpose = o.transpose ?? 0;
   if (o.transpose === undefined && o.conform && rawIn.length) {
     detectedKey = estimateKey(rawIn);
-    const target = typeof o.root === "number" ? o.root : NOTE_NAMES.indexOf(o.root);
-    transpose = transposeAmount(detectedKey.root, target);
+    transpose = bestTranspose(rawIn, o.root).transpose;
   }
   const raw = transpose ? rawIn.map((n) => ({ ...n, pitchMidi: n.pitchMidi + transpose })) : rawIn;
   const bars = o.bars ?? 4;
