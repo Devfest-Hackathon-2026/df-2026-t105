@@ -18,8 +18,15 @@ if (process.env.SMOKE_DIRECT === "1") {
 }
 await page.screenshot({ path: `${outDir}/0-initial.png` });
 
-await page.selectOption("#target", "lead");
-await page.fill("#intent", "ベースに寄り添う、少し切ないメロディ。最後の小節で上がって終わりたい");
+// SMOKE_TARGET=drums などで対象を変えられる
+const target = process.env.SMOKE_TARGET ?? "lead";
+const intents = {
+  lead: "ベースに寄り添う、少し切ないメロディ。最後の小節で上がって終わりたい",
+  bass: "ドラムのキックに合わせて跳ねるベース",
+  drums: "ベースに合う、少し跳ねたビート。最後の小節はフィルで盛り上げたい",
+};
+await page.selectOption("#target", target);
+await page.fill("#intent", intents[target]);
 await page.uncheck("#monitor");
 const t0 = Date.now();
 await page.click("#ask");

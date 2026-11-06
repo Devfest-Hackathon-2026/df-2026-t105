@@ -44,7 +44,13 @@ const SPEC_SCHEMA = {
  * 同じ意図でも解釈が複数あることを利用者に見せ、どちらを採るかを利用者に決めてもらうため。
  */
 export async function intentToSpecs(apiKey: string, p: Project, target: TrackId, intent: string): Promise<LyriaSpec[]> {
-  const role = target === "bass" ? "bassline" : "lead melody";
+  const role = target === "bass" ? "bassline" : target === "drums" ? "drum pattern" : "lead melody";
+  const instrumentRules =
+    target === "drums"
+      ? `- Use only a dry drum kit with kick, snare and closed hi-hat (no cymbal crashes, toms, percussion or reverb), because only these three are transcribed.
+- Always include "dry drum kit, kick, snare, closed hi-hat" in the first prompt. Do not mention bass or any pitched instrument in the prompts (they leak into the kick band and break the transcription).`
+      : `- Pick ONE instrument from this list (they transcribe reliably): ${target === "bass" ? '"synth bass", "electric bass (fingered)", "upright bass"' : '"square-wave synth lead", "flute", "whistling", "ocarina", "marimba"'}. Never guitar, piano, clarinet, strings, pads or choirs (they are hard to transcribe). The two candidates may use different instruments.
+- Always include the words "solo", "monophonic", "dry" in the first prompt. No chords, no reverb.`;
   const prompt = `You help a beginner music producer. They are writing a ${p.bars}-bar loop at ${p.bpm} BPM in ${p.root} major / its relative minor.
 Current tracks (MIDI, 16th-note steps):
 ${(["drums", "bass", "lead"] as TrackId[]).map((id) => "- " + describeTrack(p, id)).join("\n")}
@@ -54,8 +60,7 @@ They want a suggestion for the ${role}. Their intent (may be Japanese): """${int
 Lyria RealTime will generate audio for ONLY this part, which will then be transcribed to MIDI.
 Return exactly TWO candidates that interpret the intent differently (e.g. different register, rhythm density, or contour), so the user can compare and choose.
 For each candidate:
-- Pick ONE instrument from this list (they transcribe reliably): ${target === "bass" ? '"synth bass", "electric bass (fingered)", "upright bass"' : '"square-wave synth lead", "flute", "whistling", "ocarina", "marimba"'}. Never guitar, piano, clarinet, strings, pads or choirs (they are hard to transcribe). The two candidates may use different instruments.
-- Always include the words "solo", "monophonic", "dry" in the first prompt. No chords, no reverb.
+${instrumentRules}
 - Describe the musical character that serves the intent and fits the other tracks (rhythm, register, contour, energy).
 - 1 to 3 weighted prompts, short English phrases.
 - density 0..1 (how busy), brightness 0..1, guidance 3..5.
@@ -73,13 +78,16 @@ For each candidate:
 /** 採用候補のゴーストノートについて、どんなフレーズなのかを初心者向けに説明する */
 export async function explainGhost(apiKey: string, p: Project, target: TrackId, ghost: Note[], intent: string): Promise<string> {
   const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  const g = ghost.map((x) => `${x.step}:${names[x.pitch % 12]}${Math.floor(x.pitch / 12) - 1}x${x.len}`).join(" ");
+  const drum: Record<number, string> = { 36: "kick", 38: "snare", 42: "hat" };
+  const g = target === "drums"
+    ? ghost.map((x) => `${x.step}:${drum[x.pitch] ?? x.pitch}`).join(" ")
+    : ghost.map((x) => `${x.step}:${names[x.pitch % 12]}${Math.floor(x.pitch / 12) - 1}x${x.len}`).join(" ");
   const prompt = `A beginner asked for: """${intent}""". Key ${p.root} major/relative minor, ${p.bpm} BPM, ${p.bars} bars of 16 steps.
 Existing tracks:
 ${(["drums", "bass", "lead"] as TrackId[]).map((id) => "- " + describeTrack(p, id)).join("\n")}
 Proposed ${target} notes (step:pitch x length): ${g}
 
-In Japanese, 3 short bullet points: (1) the shape of this phrase (rhythm, contour, repetition), (2) how it relates to the existing bass/chords (which notes are chord tones, any tension), (3) one concrete thing the user could change by hand to push it further toward their intent. Only state what you can see from the note data; do not invent.`;
+In Japanese, 3 short bullet points: (1) the shape of this phrase (rhythm, contour, repetition), (2) ${target === "drums" ? "how it locks with the existing bassline rhythm (which bass notes share a step with the kick)" : "how it relates to the existing bass/chords (which notes are chord tones, any tension)"}, (3) one concrete thing the user could change by hand to push it further toward their intent. Only state what you can see from the note data; do not invent.`;
   const r = await callJson<{ bullets: string[] }>(apiKey, prompt, {
     type: "OBJECT",
     properties: { bullets: { type: "ARRAY", items: { type: "STRING" } } },

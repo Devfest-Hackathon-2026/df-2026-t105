@@ -36,16 +36,20 @@ function run(mono: Float32Array, onProgress: (p: number) => void): Promise<RawNo
   });
 }
 
-/** AudioBuffer を 22.05kHz モノラルにして、Web Worker の basic-pitch に通す（画面を止めないため） */
-export async function transcribe(buf: AudioBuffer, onProgress: (p: number) => void): Promise<RawNote[]> {
+/** AudioBuffer を 22.05kHz のモノラルにする（basic-pitch とドラム検出の入力形式） */
+export async function toMono22k(buf: AudioBuffer): Promise<Float32Array> {
   const sr = 22050;
   const off = new OfflineAudioContext(1, Math.ceil(buf.duration * sr), sr);
   const src = off.createBufferSource();
   src.buffer = buf;
   src.connect(off.destination);
   src.start();
-  const mono = (await off.startRendering()).getChannelData(0).slice();
-  return run(mono, onProgress);
+  return (await off.startRendering()).getChannelData(0).slice();
+}
+
+/** AudioBuffer を Web Worker の basic-pitch に通す（画面を止めないため） */
+export async function transcribe(buf: AudioBuffer, onProgress: (p: number) => void): Promise<RawNote[]> {
+  return run(await toMono22k(buf), onProgress);
 }
 
 /**

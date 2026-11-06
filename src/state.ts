@@ -11,6 +11,8 @@ export type Ghost = {
   sourceBpm: number;
   /** basic-pitch の生の出力。整形の強さを変えて作り直すときに使う */
   raw: { startTimeSeconds: number; durationSeconds: number; pitchMidi: number; amplitude: number }[];
+  /** ドラムのとき、検出をやり直すための 22.05kHz モノラル音声 */
+  mono?: Float32Array;
   ampRatio: number;
   spec: LyriaSpec;
   intent: string;

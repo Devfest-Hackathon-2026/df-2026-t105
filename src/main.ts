@@ -6,7 +6,8 @@ import { explainGhost, intentToSpecs } from "./gemini";
 import { generate, slice } from "./lyria";
 import { Roll } from "./roll";
 import { demoProject, load, save, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
-import { transcribe, warmUp } from "./transcribe";
+import { toMono22k, transcribe, warmUp } from "./transcribe";
+import { estimateStartSec, transcribeDrums } from "./core/drums.js";
 
 let project: Project = load() ?? demoProject();
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -92,7 +93,7 @@ function renderTracks() {
     row.className = "track" + (roll.track === t.id ? " selected" : "");
     const g = t.ghost ? `<span class="badge">ゴースト ${t.ghost.notes.length}</span>` : "";
     row.innerHTML = `<button class="track-name">${t.name}</button>${g}<span class="count">${t.notes.length}音</span><button class="mute" aria-pressed="${t.mute}" title="ミュート">M</button>`;
-    row.querySelector<HTMLButtonElement>(".track-name")!.onclick = () => { roll.track = t.id; targetSel.value = t.id === "drums" ? targetSel.value : t.id; renderAll(); };
+    row.querySelector<HTMLButtonElement>(".track-name")!.onclick = () => { roll.track = t.id; targetSel.value = t.id; renderAll(); };
     row.querySelector<HTMLButtonElement>(".mute")!.onclick = () => { t.mute = !t.mute; commit(); };
     box.appendChild(row);
   }
@@ -109,7 +110,8 @@ function onEdit(kind: "add" | "remove" | "accept" | "reject", id: TrackId, n: No
     t.ghost.notes.splice(i, 1);
     t.ghost.conf.splice(i, 1);
     if (kind === "accept") {
-      t.notes = t.notes.filter((x) => !(x.step < n.step + n.len && n.step < x.step + x.len));
+      // ドラムは同じ位置に違う楽器（キックとハイハットなど）が並ぶので、同じ楽器の重なりだけを消す
+      t.notes = t.notes.filter((x) => !(x.step < n.step + n.len && n.step < x.step + x.len && (id !== "drums" || x.pitch === n.pitch)));
       t.notes.push(n);
       project.log[t.ghost.logIndex].accepted++;
       t.ghost.accepted++;
@@ -125,20 +127,23 @@ const askBtn = $<HTMLButtonElement>("ask");
 const statusEl = $("status");
 const monitorChk = $<HTMLInputElement>("monitor");
 
-const FALLBACK = (target: "lead" | "bass"): LyriaSpec[] =>
-  (target === "bass"
+type Target = "lead" | "bass" | "drums";
+const FALLBACK = (target: Target): LyriaSpec[] =>
+  (target === "drums"
+    ? [["dry drum kit, kick snare closed hi-hat, simple groove", "シンプルなビート"], ["dry drum kit, kick snare closed hi-hat, busy syncopated groove", "細かく刻むビート"]]
+    : target === "bass"
     ? [["synth bass", "シンセベースで刻む"], ["electric bass fingered", "指弾きベースで歌う"]]
     : [["flute", "フルートで歌う"], ["square-wave synth lead", "シンセで跳ねる"]]
   ).map(([inst, title]) => ({
     title,
-    prompts: [{ text: `solo monophonic dry ${inst}, single notes`, weight: 1 }],
+    prompts: [{ text: target === "drums" ? inst : `solo monophonic dry ${inst}, single notes`, weight: 1 }],
     density: 0.4, brightness: 0.5, guidance: 4.5,
     rationale: "（Gemini に繋がらなかったので、既定の指示で生成しました）",
   }));
 
 askBtn.onclick = async () => {
   const apiKey = apiKeyInput.value.trim();
-  const target = targetSel.value as "lead" | "bass";
+  const target = targetSel.value as Target;
   const intent = intentInput.value.trim() || "この曲に合うシンプルなフレーズ";
   askBtn.disabled = true;
   try {
@@ -173,9 +178,14 @@ askBtn.onclick = async () => {
     t.alts = [];
     roll.track = target;
     for (let k = 0; k < specs.length; k++) {
-      setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch）`);
-      const raw = await transcribe(fulls[k], (p) => setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch） ${Math.round(p * 100)}%`));
-      const g = makeGhost(target, intent, specs[k], fulls[k], raw, logIndex, k);
+      setStatus(target === "drums" ? `3/4 案${LABELS[k]}のキック・スネア・ハイハットを拾っています` : `3/4 案${LABELS[k]}を耳コピしています（basic-pitch）`);
+      let g: Ghost;
+      if (target === "drums") {
+        g = await makeDrumGhost(intent, specs[k], fulls[k], logIndex, k);
+      } else {
+        const raw = await transcribe(fulls[k], (p) => setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch） ${Math.round(p * 100)}%`));
+        g = makeGhost(target, intent, specs[k], fulls[k], raw, logIndex, k);
+      }
       t.alts.push(g);
       // 最初の案ができた時点で見せる（2案目の耳コピを待たせない）
       if (k === 0) { showAlt(target, 0); }
@@ -197,6 +207,37 @@ askBtn.onclick = async () => {
 };
 
 const LABELS = ["A", "B", "C"];
+
+/**
+ * ドラムのゴーストを作る（試験的）。Lyria にドラムだけを叩かせ、帯域ごとの音の立ち上がりから
+ * キック・スネア・ハイハットの位置を拾う。basic-pitch は音の高さを持つ楽器向けなので使わない。
+ */
+async function makeDrumGhost(intent: string, spec: LyriaSpec, full: AudioBuffer, logIndex: number, k: number): Promise<Ghost> {
+  const mono = await toMono22k(full);
+  const startSec = estimateStartSec(mono, 22050, project.bpm);
+  const g: Ghost = {
+    notes: [], conf: [], full, startSec, sourceBpm: project.bpm, raw: [], mono, ampRatio: 0.5,
+    spec, intent, explanation: "", logIndex, label: LABELS[k], proposed: 0, accepted: 0,
+  };
+  redetectDrums(g, 0.5);
+  g.proposed = g.notes.length;
+  return g;
+}
+function redetectDrums(g: Ghost, sensitivity: number) {
+  g.ampRatio = sensitivity;
+  const all = transcribeDrums(g.mono!, 22050, { bpm: g.sourceBpm, startSec: g.startSec, bars: project.bars, sensitivity })
+    .filter((n) => n.vel >= 0.15);
+  // 低音域にベースが混ざると、キックをほぼ全ステップで拾ってしまう。キックとスネアは強い順に半分のステップまでに絞る
+  // （評価用の音源では、4小節あたり 11〜24 音だった）
+  const cap = project.bars * 8;
+  g.notes = [36, 38, 42]
+    .flatMap((p) => {
+      const hits = all.filter((n) => n.pitch === p).sort((a, b) => b.vel - a.vel);
+      return p === 42 ? hits : hits.slice(0, cap);
+    })
+    .sort((a, b) => a.step - b.step || a.pitch - b.pitch);
+  g.conf = g.notes.map((n) => Math.min(1, 0.3 + 0.7 * n.vel));
+}
 
 /** 耳コピの生の結果からゴーストを作る。startSec と sourceBpm を渡すと、推定をやり直さずにその値を使う */
 function makeGhost(
@@ -327,7 +368,13 @@ function nudge(d: number) {
 function reclean(ampRatio: number) {
   const id = roll.track;
   const g = project.tracks[id].ghost;
-  if (!g || id === "drums") return;
+  if (!g) return;
+  if (id === "drums") {
+    // ドラムでは「拾う音の量」を検出の感度として使う（右ほど小さな音まで拾う）
+    redetectDrums(g, Math.max(0.05, Math.min(0.95, 1 - ampRatio)));
+    commit();
+    return;
+  }
   g.ampRatio = ampRatio;
   const res = cleanToGhost(g.raw, { bpm: project.bpm, root: project.root, role: id, bars: project.bars, startSec: g.startSec, sourceBpm: g.sourceBpm, ampRatio });
   g.notes = res.notes;
@@ -391,7 +438,7 @@ function renderGhostPanel() {
   ).join("") + (alts.length < 2 && askBtn.disabled ? `<span class="muted">案Bを準備中…</span>` : "");
   for (const b of $("alts").querySelectorAll<HTMLButtonElement>("[data-alt]")) b.onclick = () => showAlt(t.id, Number(b.dataset.alt));
   renderSpec(g.spec);
-  sens.value = String(Math.round((1 - g.ampRatio) * 100));
+  sens.value = String(Math.round((t.id === "drums" ? g.ampRatio : 1 - g.ampRatio) * 100));
   const sure = g.conf.filter((c) => c > 0.6).length;
   $("ghostSummary").textContent = `残り ${g.notes.length} 音（実線で描いた確からしい音 ${sure}、点線は誤検出の可能性あり）。この案から採用 ${g.accepted} 音`;
   $("explain").textContent = g.explanation || "説明を作っています…";
@@ -400,7 +447,7 @@ function renderGhostPanel() {
 function renderLog() {
   const box = $("log");
   if (!project.log.length) { box.innerHTML = `<p class="muted">まだ記録はありません。提案を受け取って「理由を残して閉じる」と、ここに残ります。</p>`; return; }
-  box.innerHTML = [...project.log].reverse().map((e) => `<li><div><b>${e.track === "bass" ? "Bass" : "Lead"}</b> ・ ${new Date(e.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ・ 提案 ${e.proposed} 音中 ${e.accepted} 音を採用</div>
+  box.innerHTML = [...project.log].reverse().map((e) => `<li><div><b>${project.tracks[e.track]?.name ?? e.track}</b> ・ ${new Date(e.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ・ 提案 ${e.proposed} 音中 ${e.accepted} 音を採用</div>
   <div class="intent">意図: ${esc(e.intent)}</div>${e.titles ? `<div class="intent">比べた案: ${e.titles.map(esc).join(" ／ ")}${e.chosen ? `（採用: 案${esc(e.chosen)}）` : ""}</div>` : ""}${e.reason ? `<div class="reason">理由: ${esc(e.reason)}</div>` : ""}</li>`).join("");
 }
 

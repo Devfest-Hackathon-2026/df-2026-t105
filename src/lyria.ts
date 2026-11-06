@@ -8,7 +8,7 @@ const SCALE: Record<string, string> = {
 };
 
 export type LyriaRun = {
-  role: "lead" | "bass";
+  role: "lead" | "bass" | "drums";
   spec: LyriaSpec;
   bpm: number;
   root: string;
@@ -76,9 +76,11 @@ export async function generate(apiKey: string, run: LyriaRun): Promise<AudioBuff
   const rate = () => Number(/rate=(\d+)/.exec(mime)?.[1] ?? 48000);
 
   const roleCfg =
-    run.role === "bass"
-      ? { muteDrums: true }
-      : { muteDrums: true, muteBass: true };
+    run.role === "drums"
+      ? { onlyBassAndDrums: true, muteBass: true }
+      : run.role === "bass"
+        ? { muteDrums: true }
+        : { muteDrums: true, muteBass: true };
   await session.setWeightedPrompts({ weightedPrompts: run.spec.prompts });
   await session.setMusicGenerationConfig({
     musicGenerationConfig: {
