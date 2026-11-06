@@ -20,7 +20,7 @@ npm run dev               # 画面（http://127.0.0.1:5173）。/api と /ws は
 
 ## 使い方
 
-1. Lead か Bass を選び、「どうしたいか」を日本語で書く（例:「ベースに寄り添う、少し切ないメロディ。最後の小節で上がって終わりたい」）。
+1. Lead か Bass（Drums は試験的）を選び、「どうしたいか」を日本語で書く（例:「ベースに寄り添う、少し切ないメロディ。最後の小節で上がって終わりたい」）。
 2. 「Lyria に2案弾いてもらう」を押す。約50秒で2案が届く。
 3. 案A／案B を切り替え（キー 1／2）、上部の A／B／L で聴き比べる。A は自分のノートだけ、B はゴーストを MIDI で重ねた音、L は Lyria の原音を重ねた音。
 4. ゴーストノートをクリックで1音ずつ採用、右クリックで消去。小節ごとのボタンでまとめて採用、Tab で全部採用。実線は確からしい音、点線は誤検出の可能性がある音。
@@ -37,6 +37,8 @@ node scripts/smoke-demo.mjs <URL>                   # デモモードと MIDI �
 bash scripts/eval-batch.sh                          # Lyria に10本弾かせ、耳コピの一致度とテンポを測る
 ```
 
+設計ドキュメントを共有用の HTML にするには `npm run doc-page`（`out/ghostnotes-design.html` に出る）。
+
 ## 構成
 
 | パス | 役割 |
@@ -49,6 +51,7 @@ bash scripts/eval-batch.sh                          # Lyria に10本弾かせ、
 | `src/transcribe.ts`, `src/transcribe.worker.ts` | basic-pitch による耳コピ（Web Worker） |
 | `src/core/clean.js` | 耳コピ結果の整形（テンポ推定、格子合わせ、単音化、音域とスケール合わせ） |
 | `src/core/midi.js` | MIDI ファイルの書き出し |
+| `src/core/drums.js` | ドラムの検出（試験的。帯域ごとの音の立ち上がりからキック・スネア・ハイハットを拾う） |
 | `server/index.mjs` | 公開用の中継サーバー（Gemini と Lyria の通信を中継し、API キーを持つ） |
 | `scripts/` | 検証用のスクリプト（Lyria の録音、耳コピ、テンポ推定、一致度、一括評価、批評、デモ作成） |
 | `docs/data/` | 一括評価の結果 |
