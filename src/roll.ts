@@ -14,7 +14,8 @@ export class Roll {
   constructor(
     private canvas: HTMLCanvasElement,
     private get: () => Project,
-    private onEdit: (kind: "add" | "remove" | "accept" | "reject", track: TrackId, note: Note) => void,
+    /** move / resize のときは next に変更後のノートを渡す */
+    private onEdit: (kind: "add" | "remove" | "accept" | "reject" | "move" | "resize", track: TrackId, note: Note, next?: Note) => void,
   ) {
     this.ctx = canvas.getContext("2d")!;
     new ResizeObserver(() => this.draw()).observe(canvas);

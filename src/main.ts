@@ -99,8 +99,24 @@ function renderTracks() {
   }
 }
 
-function onEdit(kind: "add" | "remove" | "accept" | "reject", id: TrackId, n: Note) {
+export type EditKind = "add" | "remove" | "accept" | "reject" | "move" | "resize";
+
+function onEdit(kind: EditKind, id: TrackId, n: Note, next?: Note) {
   const t = project.tracks[id];
+  if ((kind === "move" || kind === "resize") && next) {
+    // ノートを動かす・長さを変える。重なった同じ楽器（ドラム以外は同じトラック）の音は消す
+    const steps = project.bars * 16;
+    const m: Note = {
+      ...next,
+      step: Math.max(0, Math.min(steps - 1, Math.round(next.step))),
+      len: Math.max(1, Math.min(steps - Math.max(0, Math.round(next.step)), Math.round(next.len))),
+    };
+    const others = t.notes.filter((x) => x !== n);
+    t.notes = others.filter((x) => !(x.step < m.step + m.len && m.step < x.step + x.len && (id !== "drums" ? true : x.pitch === m.pitch)));
+    t.notes.push(m);
+    commit();
+    return;
+  }
   if (kind === "add") {
     if (id !== "drums") t.notes = t.notes.filter((x) => !(x.step < n.step + n.len && n.step < x.step + x.len));
     t.notes.push(n);
