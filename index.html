@@ -55,7 +55,7 @@
         <details class="settings">
           <summary>設定</summary>
           <div class="settings-body">
-            <label class="stack">Gemini API キー（開発用。空なら中継サーバー経由）<input id="apiKey" type="password" autocomplete="off" /></label>
+            <label class="stack">Gemini API キー<input id="apiKey" type="password" autocomplete="off" /></label>
             <button id="reset" class="text-btn">デモ曲に戻す</button>
           </div>
         </details>
@@ -65,7 +65,6 @@
         <aside class="tracks-pane" aria-label="トラック">
           <div class="pane-head">トラック</div>
           <div id="tracks" class="tracks"></div>
-          <p class="pane-foot">トラック名を押すと、エディタで編集できます。</p>
         </aside>
 
         <main class="editor" aria-label="エディタ">
@@ -81,7 +80,6 @@
           <div id="takes" class="takes" hidden></div>
           <div class="roll-wrap"><canvas id="roll" aria-label="ピアノロール"></canvas></div>
           <div class="vel-wrap"><canvas id="vel" aria-label="ベロシティ（音の強さ）"></canvas></div>
-          <p class="editor-help hint">空いたマスをクリックで音を置く。音はドラッグで移動、右端のドラッグで長さ、クリックで削除。提案（紫）はクリックで採用、右クリックで消す。下の欄は音の強さで、ドラッグで変えられる。</p>
         </main>
 
         <aside class="inspector" aria-label="提案">
@@ -102,7 +100,6 @@
                 <option value="lyria-3-clip-preview">Lyria 3 Clip（短い曲）</option>
                 <option value="realtime">Lyria RealTime（テンポ・キー厳守）</option>
               </select>
-              <p id="modelHint" class="hint"></p>
             </div>
             <label class="check"><input id="monitor" type="checkbox" checked /> 待っている間に Lyria の音を聴く</label>
             <button id="ask" class="primary wide">Lyria に2案弾いてもらう</button>
@@ -125,7 +122,7 @@
             </div>
             <div class="field">
               <label for="reason">なぜ採用した／しなかったか</label>
-              <textarea id="reason" rows="2" placeholder="あとで見返せます"></textarea>
+              <textarea id="reason" rows="2"></textarea>
             </div>
             <div class="row">
               <button id="close" class="primary">理由を残して閉じる</button>

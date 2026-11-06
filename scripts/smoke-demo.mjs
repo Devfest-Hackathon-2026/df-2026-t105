@@ -13,7 +13,7 @@ await page.evaluate(() => localStorage.clear());
 await page.reload();
 const t0 = Date.now();
 await page.click("#demoBtn");
-await page.waitForFunction(() => /事前に生成した2案を表示|読み込めません/.test(document.getElementById("status")?.textContent ?? ""));
+await page.waitForFunction(() => /事前に生成した2案|読み込めません/.test(document.getElementById("status")?.textContent ?? ""));
 console.log(`${Date.now() - t0}ms`, await page.textContent("#status"));
 console.log("alts:", (await page.textContent("#alts"))?.replace(/\s+/g, " "));
 console.log("takes:", await page.locator(".take-lane").count(), "lanes,", await page.locator(".take-bar").count(), "bars");

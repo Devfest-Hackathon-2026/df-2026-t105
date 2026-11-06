@@ -102,7 +102,7 @@ $("exportMidi").onclick = () => {
   const pad = (n: number) => String(n).padStart(2, "0");
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
   downloadMidi(bytes, `ghostnotes-${stamp}.mid`);
-  setStatus("採用済みの音を MIDI に書き出しました（ゴーストは含みません）");
+  setStatus("MIDI に書き出しました");
 };
 
 // A/B
@@ -228,27 +228,16 @@ const monitorChk = $<HTMLInputElement>("monitor");
 const modelSel = $<HTMLSelectElement>("model");
 const MODEL_KEY = "ghostnotes.model";
 modelSel.value = safeGet(MODEL_KEY) ?? "lyria-3.5";
-const MODEL_HINTS: Record<string, string> = {
-  "lyria-3.5": "最上位のモデル。テンポとキーは指定どおりにならないことがあるので、耳コピのあとで曲に合わせて移調・テンポ合わせをする。約2分かかる",
-  "lyria-3-clip-preview": "30秒までの短い曲を作るモデル。3.5 よりテンポとキーを守りやすい",
-  realtime: "テンポとキーを設定値で指定でき、指定どおりに演奏する。音質は 3.5 に劣る。約50秒",
-};
-const showModelHint = () => { $("modelHint").textContent = MODEL_HINTS[modelSel.value] ?? ""; };
-showModelHint();
 // 中継サーバーが Vertex を使うときは 3.5 の代わりに 3 Pro になり、AI Studio のキーがなければ RealTime は使えない
 void serverConfig().then((c) => {
   if (!c) return;
   const opt35 = modelSel.querySelector<HTMLOptionElement>('option[value="lyria-3.5"]')!;
-  if (c.musicModels["lyria-3.5"] === "lyria-3-pro-preview") {
-    opt35.textContent = "Lyria 3 Pro（音質重視・Vertex）";
-    MODEL_HINTS["lyria-3.5"] = "Vertex AI の Lyria 3 Pro。テンポとキーは指定どおりにならないことがあるので、耳コピのあとで曲に合わせる";
-  }
+  if (c.musicModels["lyria-3.5"] === "lyria-3-pro-preview") opt35.textContent = "Lyria 3 Pro（音質重視・Vertex）";
   const rt = modelSel.querySelector<HTMLOptionElement>('option[value="realtime"]')!;
   rt.disabled = !c.realtime;
   if (!c.realtime && modelSel.value === "realtime") modelSel.value = "lyria-3.5";
-  showModelHint();
 });
-modelSel.onchange = () => { safeSet(MODEL_KEY, modelSel.value); showModelHint(); };
+modelSel.onchange = () => safeSet(MODEL_KEY, modelSel.value);
 
 /** 曲のキーを、ベースとリードの音から「A minor」のような名前にする（Lyria 3.5 へのプロンプト用） */
 function projectKeyName(): string {
@@ -281,7 +270,7 @@ askBtn.onclick = async () => {
   const intent = intentInput.value.trim() || "この曲に合うシンプルなフレーズ";
   askBtn.disabled = true;
   try {
-    setStatus("1/4 意図を2通りに解釈して、Lyria への指示にしています（Gemini）");
+    setStatus("1/4 意図を解釈しています");
     let specs: LyriaSpec[];
     try {
       specs = await intentToSpecs(apiKey, project, target, intent);
@@ -299,7 +288,7 @@ askBtn.onclick = async () => {
     let fulls: AudioBuffer[];
     if (model === "realtime") {
       const prog = specs.map(() => 0);
-      const showProg = () => setStatus(`2/4 Lyria RealTime が${specs.length}案を同時に演奏しています… ${Math.min(...prog).toFixed(0)} / ${seconds.toFixed(0)} 秒`);
+      const showProg = () => setStatus(`2/4 Lyria RealTime が演奏しています ${Math.min(...prog).toFixed(0)} / ${seconds.toFixed(0)} 秒`);
       showProg();
       // 2案を同時に生成する。生成中の試聴は案Aだけ鳴らす
       fulls = await Promise.all(specs.map((spec, k) =>
@@ -311,7 +300,7 @@ askBtn.onclick = async () => {
       ));
     } else {
       const label = model === "lyria-3.5" ? "Lyria 3.5" : "Lyria 3 Clip";
-      setStatus(`2/4 ${label} が${specs.length}案を作曲しています（20秒ほどかかります）`);
+      setStatus(`2/4 ${label} が作曲しています`);
       const keyName = projectKeyName();
       const clipSec = Math.ceil(seconds + barSec * 2);
       const res = await Promise.all(specs.map((spec) =>
@@ -334,14 +323,14 @@ askBtn.onclick = async () => {
     t.alts = [];
     roll.track = target;
     for (let k = 0; k < specs.length; k++) {
-      setStatus(target === "drums" ? `3/4 案${LABELS[k]}のキック・スネア・ハイハットを拾っています` : `3/4 案${LABELS[k]}を耳コピしています（basic-pitch）`);
+      setStatus(`3/4 案${LABELS[k]}を耳コピしています`);
       let g: Ghost;
       if (target === "drums") {
         g = await makeDrumGhost(intent, specs[k], fulls[k], logIndex, k);
       } else {
         // 非リアルタイムのモデルは1分ほどの曲を返すので、耳コピは先頭の約35秒だけにする（時間を抑えるため）
         const src = model === "realtime" ? fulls[k] : slice(engine.context, fulls[k], 0, Math.min(fulls[k].duration, 35));
-        const raw = await transcribe(src, (p) => setStatus(`3/4 案${LABELS[k]}を耳コピしています（basic-pitch） ${Math.round(p * 100)}%`));
+        const raw = await transcribe(src, (p) => setStatus(`3/4 案${LABELS[k]}を耳コピしています ${Math.round(p * 100)}%`));
         g = makeGhost(target, intent, specs[k], fulls[k], raw, logIndex, k, undefined, model !== "realtime");
         g.model = model;
       }
@@ -356,7 +345,7 @@ askBtn.onclick = async () => {
     if (!t.alts.some((g) => g.notes.length)) throw new Error("音を拾えませんでした。もう一度試すか、意図の書き方を変えてください");
     project.log[logIndex].proposed = Math.max(...t.alts.map((g) => g.proposed));
     commit();
-    setStatus(`${t.alts.length}案が届きました。案を切り替えて聴き比べ（キー 1 / 2）、クリックで1音ずつ採用、Tab で全部採用`);
+    setStatus(`${t.alts.length}案が届きました`);
   } catch (e) {
     console.error(e);
     setStatus(String((e as Error).message ?? e), true);
@@ -472,7 +461,7 @@ if (params.has("demo")) {
       project.log[logIndex].proposed = Math.max(...t.alts.map((g) => g.proposed));
       roll.track = set.target;
       showAlt(set.target, 0);
-      setStatus(`事前に生成した2案を表示しています（${new Date(set.createdAt).toLocaleString("ja-JP")} に生成）`);
+      setStatus(`事前に生成した2案（${new Date(set.createdAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）`);
     } catch (e) {
       setStatus(`デモ用の提案を読み込めませんでした: ${(e as Error).message}`, true);
     } finally {
@@ -617,7 +606,7 @@ function renderTakes() {
           return `<button class="take-bar${n ? "" : " empty"}" data-take="${k}" data-bar="${b}" aria-pressed="${on}" title="${b + 1}小節目を案${a.label}の音で置き換える（${n}音）${on ? "。もう一度押すと元に戻す" : ""}"><canvas></canvas></button>`;
         }).join("")}
       </div>
-    </div>`).join("") + `<p class="takes-hint hint">小節を押すと、その小節を案の音で置き換えます（コンピング）。もう一度押すと元に戻ります。</p>`;
+    </div>`).join("");
   for (const b of box.querySelectorAll<HTMLButtonElement>(".take-label")) b.onclick = () => showAlt(t.id, Number(b.dataset.take));
   for (const b of box.querySelectorAll<HTMLButtonElement>(".take-bar")) {
     b.onclick = () => compBar(Number(b.dataset.take), Number(b.dataset.bar));
@@ -684,17 +673,17 @@ function renderGhostPanel() {
   renderSpec(g.spec);
   if (g.model && g.model !== "realtime") {
     const tp = g.transpose ?? 0;
-    $("spec").insertAdjacentHTML("beforeend", `<div class="params">演奏は ${g.sourceBpm.toFixed(1)} BPM・${esc(g.detectedKey ?? "キー不明")}。${tp ? `曲のキーに合わせて ${tp > 0 ? "+" : ""}${tp} 半音移調し、` : ""}テンポを曲に揃えました</div>`);
+    $("spec").insertAdjacentHTML("beforeend", `<div class="params">演奏 ${g.sourceBpm.toFixed(1)} BPM・${esc(g.detectedKey ?? "キー不明")}${tp ? `・${tp > 0 ? "+" : ""}${tp} 半音移調` : ""}</div>`);
   }
   sens.value = String(Math.round((t.id === "drums" ? g.ampRatio : 1 - g.ampRatio) * 100));
   const sure = g.conf.filter((c) => c > 0.6).length;
-  $("ghostSummary").textContent = `残り ${g.notes.length} 音（実線で描いた確からしい音 ${sure}、点線は誤検出の可能性あり）。この案から採用 ${g.accepted} 音`;
+  $("ghostSummary").textContent = `${g.notes.length}音・確からしい音 ${sure}・採用 ${g.accepted}`;
   $("explain").textContent = g.explanation || "説明を作っています…";
 }
 
 function renderLog() {
   const box = $("log");
-  if (!project.log.length) { box.innerHTML = `<p class="hint">まだ記録はありません。提案を受け取って「理由を残して閉じる」と、ここに残ります。</p>`; return; }
+  if (!project.log.length) { box.innerHTML = `<p class="hint">まだありません</p>`; return; }
   box.innerHTML = [...project.log].reverse().map((e) => `<li><div><b>${project.tracks[e.track]?.name ?? e.track}</b> ・ ${new Date(e.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ・ 提案 ${e.proposed} 音中 ${e.accepted} 音を採用</div>
   <div class="intent">意図: ${esc(e.intent)}${e.model ? `（${esc(e.model)}）` : ""}</div>${e.titles ? `<div class="intent">比べた案: ${e.titles.map(esc).join(" ／ ")}${e.chosen ? `（採用: 案${esc(e.chosen)}）` : ""}</div>` : ""}${e.reason ? `<div class="reason">理由: ${esc(e.reason)}</div>` : ""}</li>`).join("");
 }
@@ -805,13 +794,13 @@ $("redo").onclick = redo;
 $("exportWav").onclick = async () => {
   const btn = $<HTMLButtonElement>("exportWav");
   btn.disabled = true;
-  setStatus("採用済みの音を WAV に書き出しています（2ループ）");
+  setStatus("WAV に書き出しています");
   try {
     const buf = await renderMix(project, 2);
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
     downloadBytes(encodeWav(buf), `ghostnotes-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.wav`, "audio/wav");
-    setStatus(`WAV に書き出しました（${buf.duration.toFixed(1)} 秒、ゴーストは含みません）`);
+    setStatus(`WAV に書き出しました（${buf.duration.toFixed(1)} 秒）`);
   } catch (e) {
     setStatus(`WAV に書き出せませんでした: ${(e as Error).message}`, true);
   } finally {

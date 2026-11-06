@@ -35,7 +35,7 @@ const deadline = Date.now() + 240_000;
 while (Date.now() < deadline) {
   const s = await page.textContent("#status");
   if (s !== last) { console.log(`${((Date.now() - t0) / 1000).toFixed(1)}s`, s); last = s; }
-  if (/クリックで1音ずつ採用|できませんでした|error|Error/.test(s ?? "")) break;
+  if (/案が届きました|できませんでした|失敗|error|Error/.test(s ?? "")) break;
   await page.waitForTimeout(500);
 }
 await page.screenshot({ path: `${outDir}/1-ghost.png` });

@@ -190,7 +190,6 @@ input[type="checkbox"] { accent-color: var(--accent); }
 /* ---------- トラック ---------- */
 .tracks-pane { display: flex; flex-direction: column; min-height: 0; background: var(--surface-2); border-right: 1px solid var(--line); }
 .pane-head { padding: 10px 14px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); }
-.pane-foot { margin: auto 0 0; padding: 10px 14px 14px; color: var(--muted); font-size: 12px; }
 .tracks { display: flex; flex-direction: column; }
 .track {
   display: grid;
@@ -239,13 +238,11 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .take-bar:hover:not(:disabled) { border-color: var(--ghost); background: var(--surface); }
 .take-bar[aria-pressed="true"] { border-color: var(--ghost); background: var(--ghost-soft); box-shadow: inset 0 0 0 1px var(--ghost); }
 .take-bar.empty { opacity: 0.5; }
-.takes-hint { padding: 0 14px 0 56px; margin: 2px 0 0; }
 
 .roll-wrap { flex: 1 1 auto; min-height: 260px; position: relative; }
 #roll { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 .vel-wrap { flex: 0 0 72px; border-top: 1px solid var(--line); position: relative; }
 #vel { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-.editor-help { padding: 8px 14px 10px; border-top: 1px solid var(--line); }
 
 /* ---------- インスペクタ ---------- */
 .inspector { display: flex; flex-direction: column; min-height: 0; overflow: auto; background: var(--surface-2); border-left: 1px solid var(--line); }
@@ -290,7 +287,6 @@ input[type="checkbox"] { accent-color: var(--accent); }
   #key { max-width: 150px; }
   .tracks-pane { border-right: 0; border-bottom: 1px solid var(--line); }
   .tracks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-  .pane-foot { display: none; }
   .editor { min-height: 560px; }
   .legend { margin-left: 0; }
   .transport .t-group.push { margin-left: 0; }
