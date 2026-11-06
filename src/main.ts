@@ -46,6 +46,16 @@ const keySel = $<HTMLSelectElement>("key");
 keySel.innerHTML = NOTE_NAMES.map((n) => `<option value="${n}">${n} メジャー / ${NOTE_NAMES[(NOTE_NAMES.indexOf(n) + 9) % 12]} マイナー</option>`).join("");
 keySel.value = project.root;
 keySel.onchange = () => { project.root = keySel.value; commit(); };
+const barsSel = $<HTMLSelectElement>("bars");
+barsSel.value = String(project.bars);
+// 短くしたときも、ループの外に出た音は消さずに残す（長さを戻すか、元に戻すで復活する）
+barsSel.onchange = () => {
+  project.bars = Number(barsSel.value);
+  engine.setBars(project.bars);
+  for (const t of Object.values(project.tracks)) { t.ghost = null; t.alts = null; }
+  engine.setLyria(null);
+  commit();
+};
 $("reset").onclick = () => {
   if (!confirmInline($("reset"), "もう一度押すとデモ曲に戻します")) return;
   project = demoProject();
@@ -634,7 +644,9 @@ function restore(s: string) {
   for (const [id, t] of Object.entries(o.tracks) as [TrackId, Partial<typeof project.tracks.lead>][]) Object.assign(project.tracks[id], t);
   bpmInput.value = String(project.bpm);
   keySel.value = project.root;
+  barsSel.value = String(project.bars);
   engine.setBpm(project.bpm);
+  engine.setBars(project.bars);
   save(project);
   engine.applyTrackSettings();
   renderAll();
