@@ -31,7 +31,7 @@ npm run dev               # 画面（http://127.0.0.1:5173）。/api と /ws は
 ## 確かめ方
 
 ```bash
-npm test                                            # 整形処理と MIDI 書き出しの単体テスト
+npm test                                            # 整形処理、MIDI 書き出し、ドラム検出の単体テスト
 node --env-file=.env scripts/smoke.mjs <URL> out/x  # ブラウザで生成から記録までを通す（API を呼ぶ）
 node scripts/smoke-demo.mjs <URL>                   # デモモードと MIDI 書き出しを通す（API を呼ばない）
 bash scripts/eval-batch.sh                          # Lyria に10本弾かせ、耳コピの一致度とテンポを測る
