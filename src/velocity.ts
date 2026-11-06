@@ -100,7 +100,7 @@ export class VelocityLane {
     const bar = (n: Note, vel: number, color: string, alpha: number) => {
       if(n.step<this.startBar*16||n.step>=(this.startBar+this.viewBars)*16)return;
       const x = KEY_W + (n.step-this.startBar*16) * cw - 2;
-      const w = Math.max(2, Math.min(cw * 0.6, 8));
+      const w = Math.max(3, Math.min(cw * 0.6, 8));
       const top = pad + h * (1 - vel);
       c.globalAlpha = alpha;
       c.fillStyle = color;

@@ -9,6 +9,9 @@
   <body>
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <defs>
+        <symbol id="i-chevron-left" viewBox="0 0 16 16"><path d="m10 3-5 5 5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-chevron-right" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-loop" viewBox="0 0 16 16"><path d="M3 5h9l-2-2m3 8H4l2 2M12 5a4 4 0 0 1 1 5M4 11a4 4 0 0 1-1-5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></symbol>
         <symbol id="i-play" viewBox="0 0 16 16"><path d="M4.5 2.8v10.4L13 8z" fill="currentColor" /></symbol>
         <symbol id="i-stop" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1.2" fill="currentColor" /></symbol>
         <symbol id="i-start" viewBox="0 0 16 16"><path d="M3.5 3v10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M13 3.2v9.6L5.8 8z" fill="currentColor" /></symbol>
@@ -43,9 +46,9 @@
         <button id="loop" class="text-btn" aria-pressed="false" title="曲の内容がある範囲を繰り返す">ループ</button>
 
         <div class="seg" role="group" aria-label="聴くもの">
-          <button data-mode="A" title="自分のノートだけを鳴らす">自分</button>
-          <button data-mode="B" title="提案（ゴースト）も MIDI で重ねて鳴らす">＋提案</button>
-          <button data-mode="L" title="Lyria が弾いた原音を重ねて鳴らす">＋原音</button>
+          <button data-mode="A" title="自分のノートだけを鳴らす">ノート</button>
+          <button data-mode="B" title="提案（ゴースト）も MIDI で重ねて鳴らす">提案</button>
+          <button data-mode="L" title="Lyria が弾いた原音を重ねて鳴らす">原音</button>
         </div>
 
         <div class="t-group push" role="group" aria-label="編集の履歴">
@@ -61,6 +64,7 @@
           <div class="settings-body">
             <label class="stack">Gemini API キー<input id="apiKey" type="password" autocomplete="off" /></label>
             <label class="stack">耳コピ<select id="transcriber"><option value="a100">MuScriptor medium（A100）</option><option value="cpu">MuScriptor（CPU）</option><option value="browser">Basic Pitch（補助）</option></select></label>
+            <label class="check"><input id="monitor" type="checkbox" /> 原音を自動再生</label>
             <a href="/compare/">試聴比較</a>
             <a href="/soundfonts/LICENSE-MuseScore-General.txt" target="_blank" rel="noopener">音源: MuseScore General</a>
             <button id="reset" class="text-btn">曲を空にする</button>
@@ -68,29 +72,36 @@
         </details>
       </header>
 
-      <div class="workspace">
-        <aside class="tracks-pane" aria-label="トラック">
+      <nav class="mobile-panels" aria-label="作業パネル">
+        <button data-pane="tracks" aria-pressed="false" aria-controls="tracksPane">トラック</button>
+        <button data-pane="editor" aria-pressed="true" aria-controls="editorPane">編集</button>
+        <button data-pane="generate" aria-pressed="false" aria-controls="generatorPane">生成</button>
+      </nav>
+      <div class="workspace" data-mobile-pane="editor">
+        <aside id="tracksPane" class="tracks-pane" aria-label="トラック">
           <div class="pane-head">トラック</div>
           <div id="tracks" class="tracks"></div>
         </aside>
 
-        <main class="editor" aria-label="エディタ">
+        <main id="editorPane" class="editor" aria-label="エディタ">
           <div class="editor-head">
-            <b id="rollTitle"></b>
+            <h1 id="rollTitle"></h1>
             <span id="rollMeta" class="hint"></span>
             <span class="legend" aria-hidden="true">
               <span class="lg lg-note"></span>自分の音
               <span class="lg lg-ghost"></span>提案
-              <span class="lg lg-ghost dashed"></span>誤検出かも
+              
             </span>
           </div>
           <div class="edit-tools" aria-label="編集範囲とグリッド">
-            <button id="viewPrev" class="text-btn" aria-label="前の小節へ">前へ</button>
-            <button id="playView" class="text-btn">表示範囲をループ</button>
-            <label>表示開始<input id="viewStart" type="number" min="1" value="1" /></label>
-            <button id="viewNext" class="text-btn" aria-label="次の小節へ">次へ</button>
-            <label>表示幅<select id="viewBars"><option value="1">1小節</option><option value="2">2小節</option><option value="4" selected>4小節</option><option value="8">8小節</option><option value="16">16小節</option></select></label>
+            <div class="view-navigation">
+              <button id="viewPrev" class="icon-btn" aria-label="前の小節へ" title="前へ"><svg><use href="#i-chevron-left" /></svg></button>
+              <label><span class="sr-only">表示開始の小節</span><input id="viewStart" type="number" min="1" value="1" aria-label="表示開始の小節" /></label>
+              <button id="viewNext" class="icon-btn" aria-label="次の小節へ" title="次へ"><svg><use href="#i-chevron-right" /></svg></button>
+            </div>
+            <label>ズーム<select id="viewBars"><option value="1">1小節</option><option value="2">2小節</option><option value="4" selected>4小節</option><option value="8">8小節</option><option value="16">16小節</option></select></label>
             <label>グリッド<select id="grid"><option value="4">1/4</option><option value="2">1/8</option><option value="1">1/16</option><option value="0.5">1/32</option><option value="0.25" selected>1/64</option><option value="0.125">1/128</option><option value="1.3333333333333333">1/8 三連</option><option value="0.6666666666666666">1/16 三連</option><option value="0.3333333333333333">1/32 三連</option><option value="0">自由</option></select></label>
+            <button id="playView" class="icon-btn" aria-label="表示範囲をループ" title="表示範囲をループ"><svg><use href="#i-loop" /></svg></button>
             <input id="timeline" type="range" min="0" max="0" value="0" aria-label="曲内の表示位置" />
           </div>
           <div id="takes" class="takes" hidden></div>
@@ -98,40 +109,34 @@
           <div class="vel-wrap"><canvas id="vel" aria-label="ベロシティ（音の強さ）"></canvas></div>
         </main>
 
-        <aside class="inspector" aria-label="提案">
-          <section class="panel">
-            <h2>提案を頼む</h2>
-            <div class="field">
-              <label for="target">対象のトラック</label>
-              <select id="target"><option value="lead">Lead</option><option value="bass">Bass</option><option value="drums">Drums（試験的）</option></select>
+        <aside id="generatorPane" class="inspector" aria-label="提案">
+          <section class="panel generation-panel">
+            <h2>生成</h2>
+            <div class="control-pair">
+              <label class="stack">トラック<select id="target"><option value="lead">生成先</option></select></label>
+              <label class="stack">モデル<select id="model"><option value="lyria-3.5">Lyria 3.5</option><option value="lyria-3-clip-preview">Lyria 3 Clip</option><option value="realtime">Lyria RealTime</option></select></label>
             </div>
             <div class="field">
-              <label for="intent">どうしたいか</label>
-              <textarea id="intent" rows="3" placeholder="例: ベースに寄り添う、少し切ないメロディ。最後の小節で上がって終わりたい"></textarea>
+              <label for="intent">フレーズ</label>
+              <textarea id="intent" rows="2" placeholder="例：少し跳ねたジャズのフレーズ"></textarea>
             </div>
-            <div class="field">
-              <label for="model">Lyria のモデル</label>
-              <select id="model">
-                <option value="lyria-3.5">Lyria 3.5</option>
-                <option value="lyria-3-clip-preview">Lyria 3 Clip</option>
-                <option value="realtime">Lyria RealTime</option>
-              </select>
+            <div class="control-pair">
+              <label class="stack">開始小節<input id="generationStart" type="number" min="1" value="1" /></label>
+              <label class="stack">長さ（小節）<input id="generationBars" type="number" min="1" max="32" value="4" /></label>
             </div>
-            <div class="row">
-              <label class="stack">生成開始の小節<input id="generationStart" type="number" min="1" value="1" /></label>
-              <label class="stack">生成する小節数<input id="generationBars" type="number" min="1" max="32" value="4" /></label>
+            <div class="control-pair">
+              <label class="stack">候補数<select id="candidateCount"><option value="1">1案</option><option value="2">2案</option><option value="3">3案</option><option value="4">4案</option></select></label>
+              <label class="stack">並列<select id="generationConcurrency"><option value="1">順番に生成</option><option value="2">2並列</option><option value="3">3並列</option><option value="4">4並列</option></select></label>
             </div>
-            <div class="row">
-              <label class="stack">生成数<select id="candidateCount"><option value="1">1案</option><option value="2">2案</option><option value="3">3案</option><option value="4">4案</option></select></label>
-              <label class="stack">同時生成数<select id="generationConcurrency"><option value="1">1（順番に生成）</option><option value="2">2並列</option><option value="3">3並列</option><option value="4">4並列</option></select></label>
-            </div>
-            <div class="row"><label class="stack">試聴する案<select id="previewTake" disabled><option value="0">案A</option></select></label><button id="previewStop" class="text-btn" disabled>試聴を停止</button></div>
-            <audio id="previewAudio" controls preload="none" aria-label="生成した原音の試聴"></audio>
-            <label class="check"><input id="monitor" type="checkbox" /> 自動試聴</label>
             <button id="ask" class="primary wide"><svg><use href="#i-spark" /></svg>生成する</button>
-            <button id="demoBtn" class="text-btn wide" hidden>事前に生成した2案を出す（実演用）</button>
+            <button id="demoBtn" class="text-btn wide" hidden>収録済みの2案を開く</button>
             <div class="progress" aria-hidden="true"><div id="progressBar"></div></div>
             <p id="status" class="status" aria-live="polite"></p>
+          </section>
+
+          <section id="previewPanel" class="panel preview-panel" hidden>
+            <div class="preview-head"><h2>原音</h2><label><span class="sr-only">試聴する案</span><select id="previewTake" disabled><option value="0">案A</option></select></label><button id="previewStop" class="icon-btn" aria-label="試聴を停止" title="停止して先頭へ" disabled><svg><use href="#i-stop" /></svg></button></div>
+            <audio id="previewAudio" controls preload="none" aria-label="生成した原音の試聴"></audio>
           </section>
 
           <section id="ghost" class="panel" hidden>
@@ -146,20 +151,14 @@
               <button id="nudgeR" class="text-btn" title="提案を16分ひとつ後ろへ">1/16 →</button>
               <button id="acceptAll" class="text-btn" title="表示中の案の音を全部採用（Tab）">全部採用</button>
             </div>
-            <div class="field">
-              <label for="reason">採用した理由</label>
-              <textarea id="reason" rows="2"></textarea>
-            </div>
+            <details class="note-details"><summary>メモ</summary><label class="sr-only" for="reason">採用した理由</label><textarea id="reason" rows="2"></textarea></details>
             <div class="row">
-              <button id="close" class="primary">理由を残して閉じる</button>
-              <button id="discard" class="text-btn">破棄（Esc）</button>
+              <button id="close" class="primary">確定</button>
+              <button id="discard" class="text-btn">破棄</button>
             </div>
           </section>
 
-          <section class="panel">
-            <h2>判断の記録</h2>
-            <ul id="log" class="log"></ul>
-          </section>
+          <details class="panel history-panel"><summary>履歴</summary><ul id="log" class="log"></ul></details>
         </aside>
       </div>
     </div>

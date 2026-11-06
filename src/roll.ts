@@ -101,10 +101,11 @@ export class Roll {
     if (step < 0 || step >= steps || row < 0 || row >= rows.length) return { kind: "outside" };
     const pitch = rows[row].pitch;
     const t = this.get().tracks[this.track];
-    const covers = (n: Note) => n.pitch === pitch && step+this.startBar*16 >= n.step && step+this.startBar*16 < n.step + Math.max(n.len,3/cw);
-    const ghost = t.ghost?.notes.find(covers);
+    const covers = (n: Note) => n.pitch === pitch && step+this.startBar*16 >= n.step && step+this.startBar*16 < n.step + Math.max(n.len,(trackRole(this.get(),this.track)==="drums"?8:3)/cw);
+    const nearest=(notes:Note[])=>notes.filter(covers).sort((a,b)=>Math.abs(a.step-(step+this.startBar*16))-Math.abs(b.step-(step+this.startBar*16)))[0];
+    const ghost = nearest(t.ghost?.notes??[]);
     if (ghost) return { kind: "ghost", note: ghost };
-    const real = t.notes.find(covers);
+    const real = nearest(t.notes);
     if (!real) return { kind: "empty" };
     // 右端のつかみ幅。幅 24px 未満の短いノートは幅の 25%、それ以外は 6px。ドラムは長さを変えない
     const w = real.len * cw;
@@ -229,7 +230,7 @@ export class Roll {
   draw() {
     const rowCount=this.rows().length;
     const parentHeight=this.canvas.parentElement?.clientHeight??260;
-    const height=Math.max(parentHeight,RULER_H+rowCount*(trackRole(this.get(),this.track)==="drums"?26:16));
+    const height=Math.max(parentHeight,RULER_H+rowCount*(trackRole(this.get(),this.track)==="drums"?20:16));
     if(this.canvas.style.height!==`${height}px`)this.canvas.style.height=`${height}px`;
     const dpr = devicePixelRatio || 1;
     const { r, rows, steps, cw, rh } = this.geom();
@@ -281,7 +282,7 @@ export class Roll {
       c.fillStyle = noteColor;
       c.globalAlpha = (0.6 + 0.4 * n.vel) * mul;
       c.beginPath();
-      c.roundRect(L + (n.step-this.startBar*16) * cw + 1, yy + 1, Math.max(3, n.len * cw - 2), rh - 2, 3);
+      c.roundRect(L + (n.step-this.startBar*16) * cw + 1, yy + 1, Math.max(drums?8:3, n.len * cw - 2), rh - 2, 3);
       c.fill();
       c.globalAlpha = 1;
     };
@@ -302,7 +303,7 @@ export class Roll {
       c.fillStyle = v("--ghost");
       c.globalAlpha = 0.1 + 0.2 * conf;
       c.beginPath();
-      c.roundRect(L + (n.step-this.startBar*16) * cw + 1.5, yy + 1.5, Math.max(3, n.len * cw - 3), rh - 3, 3);
+      c.roundRect(L + (n.step-this.startBar*16) * cw + 1.5, yy + 1.5, Math.max(drums?8:3, n.len * cw - 3), rh - 3, 3);
       c.fill();
       c.globalAlpha = 0.5 + 0.5 * conf;
       c.setLineDash(conf > 0.6 ? [] : [3, 3]);

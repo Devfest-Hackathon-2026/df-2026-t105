@@ -35,6 +35,13 @@ engine.onStep = (s) => {
 // OS のダークモードを切り替えたら、canvas も描き直す
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderAll());
 
+function showMobilePane(pane:string){
+  document.querySelector<HTMLElement>(".workspace")!.dataset.mobilePane=pane;
+  for(const b of document.querySelectorAll<HTMLButtonElement>("[data-pane]"))b.setAttribute("aria-pressed",String(b.dataset.pane===pane));
+  if(pane==="editor")requestAnimationFrame(()=>{roll.draw();vel.draw()});
+}
+for(const b of document.querySelectorAll<HTMLButtonElement>("[data-pane]"))b.onclick=()=>showMobilePane(b.dataset.pane!);
+
 // ---------- API キー ----------
 const KEY_STORE = "ghostnotes.apiKey";
 const apiKeyInput = $<HTMLInputElement>("apiKey");
@@ -78,7 +85,7 @@ bpmInput.onchange = () => {
   commit();
 };
 const keySel = $<HTMLSelectElement>("key");
-keySel.innerHTML = NOTE_NAMES.map((n) => `<option value="${n}">${n} メジャー / ${NOTE_NAMES[(NOTE_NAMES.indexOf(n) + 9) % 12]} マイナー</option>`).join("");
+keySel.innerHTML = NOTE_NAMES.map((n) => `<option value="${n}">${n} / ${NOTE_NAMES[(NOTE_NAMES.indexOf(n) + 9) % 12]}m</option>`).join("");
 keySel.value = project.root;
 keySel.onchange = () => { project.root = keySel.value; commit(); };
 const viewStart=$<HTMLInputElement>("viewStart"),viewBars=$<HTMLSelectElement>("viewBars"),timeline=$<HTMLInputElement>("timeline");
@@ -153,12 +160,12 @@ function renderTracks() {
     const ghost = t.ghost ? `<span class="ghost-badge" title="提案があります" aria-label="提案あり"></span>` : "";
     row.innerHTML = `<span class="dot"></span>
       <button class="track-name" title="${t.name} をエディタで開く">${t.name}<span class="count">${t.notes.length}音</span>${ghost}</button>
-      <button class="solo" aria-pressed="${!!t.solo}" title="ソロ（このトラックだけ鳴らす）">S</button>
-      <button class="mute" aria-pressed="${t.mute}" title="ミュート">M</button>
+      <button class="solo" aria-label="${esc(t.name)}をソロ" aria-pressed="${!!t.solo}" title="ソロ（このトラックだけ鳴らす）">S</button>
+      <button class="mute" aria-label="${esc(t.name)}をミュート" aria-pressed="${t.mute}" title="ミュート">M</button>
       <canvas class="clip" aria-hidden="true"></canvas>
       <input class="vol" type="range" min="-24" max="6" step="1" value="${t.volume ?? 0}" aria-label="${t.name} の音量" title="音量 ${t.volume ?? 0} dB" />
       ${presetSel}`;
-    const select = () => { roll.track = t.id; if (t.id !== "drums" || targetSel.querySelector('option[value="drums"]')) targetSel.value = t.id; renderAll(); };
+    const select = () => { showMobilePane("editor");roll.track = t.id; if (t.id !== "drums" || targetSel.querySelector('option[value="drums"]')) targetSel.value = t.id; renderAll(); };
     row.querySelector<HTMLButtonElement>(".track-name")!.onclick = select;
     row.querySelector<HTMLCanvasElement>(".clip")!.onclick = select;
     row.querySelector<HTMLButtonElement>(".mute")!.onclick = () => { t.mute = !t.mute; commit(); };
@@ -320,7 +327,7 @@ askBtn.onclick = async () => {
   requestedCount = Math.min(4,Math.max(1,Number(candidateCount.value)||1));
   const parallelism = Math.min(requestedCount,Math.max(1,Number(generationConcurrency.value)||1));
   stopPreview();
-  previewBuffers.clear();
+  previewBuffers.clear();$("previewPanel").hidden=true;
   previewAudio.removeAttribute("src");previewAudio.load();
   if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null}
   $("previewStop").setAttribute("disabled","");
@@ -455,6 +462,7 @@ function renderPreviewChoices(){
   const selected=previewTake.value;
   previewTake.innerHTML=Array.from({length:requestedCount},(_,k)=>`<option value="${k}" ${previewBuffers.has(k)?"":"disabled"}>案${LABELS[k]}${previewBuffers.has(k)?"":"（準備中）"}</option>`).join("");
   previewTake.disabled=!previewBuffers.size;
+  previewTake.parentElement!.hidden=requestedCount===1;
   previewTake.value=previewBuffers.has(Number(selected))?selected:String(previewBuffers.keys().next().value??0);
 }
 function loadPreview(buf:AudioBuffer){
@@ -462,6 +470,7 @@ function loadPreview(buf:AudioBuffer){
   previewUrl=URL.createObjectURL(new Blob([encodeWav(buf)],{type:"audio/wav"}));previewAudio.src=previewUrl;$("previewStop").removeAttribute("disabled");
 }
 function setPreviewCandidate(k:number,buf:AudioBuffer){
+  $("previewPanel").hidden=false;
   const first=previewBuffers.size===0;previewBuffers.set(k,buf);renderPreviewChoices();
   if(askBtn.disabled)setStatus(`2/3 原音 ${previewBuffers.size}/${requestedCount}案の生成が完了しました`);
   if(first){loadPreview(buf);if(monitorChk.checked)void previewAudio.play().catch(()=>{})}
@@ -469,7 +478,7 @@ function setPreviewCandidate(k:number,buf:AudioBuffer){
 previewTake.onchange=()=>{const buf=previewBuffers.get(Number(previewTake.value));if(buf)loadPreview(buf)};
 $("previewStop").onclick=stopPreview;
 monitorChk.onchange=()=>{if(!monitorChk.checked)stopPreview();else if(previewAudio.src)void previewAudio.play().catch(()=>{})};
-function previewWhileWaiting(buf:AudioBuffer){loadPreview(buf);void previewAudio.play().catch(()=>{})}
+function previewWhileWaiting(buf:AudioBuffer){$("previewPanel").hidden=false;loadPreview(buf);void previewAudio.play().catch(()=>{})}
 function stopPreview(){previewAudio.pause();if(previewAudio.readyState>0)previewAudio.currentTime=0}
 
 /**
@@ -704,8 +713,8 @@ function renderTakes() {
   const box = $("takes");
   const t = project.tracks[roll.track];
   const alts = t.alts ?? (t.ghost ? [t.ghost] : null);
-  box.hidden = !alts;
-  if (!alts) { box.innerHTML = ""; return; }
+  box.hidden = !alts||alts.every(a=>!a.notes.length);
+  if (!alts||alts.every(a=>!a.notes.length)) { box.innerHTML = ""; return; }
   const st = comps[t.id];
   const bars = roll.viewBars;
   box.innerHTML = alts.map((a, k) => `
@@ -809,9 +818,9 @@ function renderGhostPanel() {
   }
   sens.closest<HTMLElement>("label")!.hidden = !!g.polyphonic;
   sens.value = String(Math.round((t.id === "drums" ? g.ampRatio : 1 - g.ampRatio) * 100));
-  const sure = g.conf.filter((c) => c > 0.6).length;
   const occupied=new Set(g.notes.map(n=>Math.floor(n.step/16))).size;
-  $("ghostSummary").textContent = g.polyphonic?`${g.notes.length}音・音符のある小節 ${occupied}/${g.bars??project.bars}・採用 ${g.accepted}`:`${g.notes.length}音・確からしい音 ${sure}・採用 ${g.accepted}`;
+  $("ghostSummary").textContent = g.notes.length?`残り ${g.notes.length}音 · 採用 ${g.accepted}音 · ${occupied}/${g.bars??project.bars}小節`:`${g.accepted}音採用済み`;
+  for(const id of ["nudgeL","nudgeR","acceptAll"])$<HTMLButtonElement>(id).disabled=!g.notes.length;
   if(g.polyphonic)$("spec").insertAdjacentHTML("beforeend",`<div class="params">原音の開始 ${g.startSec.toFixed(2)}秒・推定 ${g.sourceBpm.toFixed(1)} BPM</div>`);
   $("explain").textContent = g.explanation;
   $("explainDetails").hidden = !g.explanation;
@@ -819,7 +828,7 @@ function renderGhostPanel() {
 
 function renderLog() {
   const box = $("log");
-  if (!project.log.length) { box.innerHTML = `<p class="hint">まだありません</p>`; return; }
+  if (!project.log.length) { box.innerHTML = `<li class="hint">履歴なし</li>`; return; }
   box.innerHTML = [...project.log].reverse().map((e) => {
     const time = new Date(e.at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
     const what = e.chosen ? `採用 案${esc(e.chosen)}` : e.accepted ? `採用 ${e.accepted}音` : "見送り";
@@ -881,7 +890,7 @@ function renderAll() {
   renderModes();
   const t = project.tracks[roll.track];
   $("rollTitle").textContent = t.name;
-  $("rollMeta").textContent = `${t.notes.length}音${t.ghost ? `・提案 ${t.ghost.notes.length}音（案${t.ghost.label}）` : ""}・${project.bpm} BPM`;
+  $("rollMeta").textContent = `${t.notes.length}音${t.ghost ? `・提案 ${t.ghost.notes.length}音（案${t.ghost.label}）` : ""}`;
   document.querySelector<HTMLElement>(".lg-note")!.style.background = `var(--track-${trackRole(project,t.id)})`;
   roll.draw();
   vel.draw();
