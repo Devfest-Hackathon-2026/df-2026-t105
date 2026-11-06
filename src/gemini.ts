@@ -45,13 +45,16 @@ const SPEC_SCHEMA = {
  */
 export async function intentToSpecs(apiKey: string, p: Project, target: TrackId, intent: string, count: number = 1): Promise<LyriaSpec[]> {
   const targetRole = trackRole(p,target);
-  const role = targetRole === "bass" ? "bassline" : targetRole === "drums" ? "drum pattern" : "lead melody";
+  const targetTrack = p.tracks[target];
+  const preferredInst = targetTrack?.instrument ? targetTrack.instrument.replace(/_/g, " ") : "";
+  const role = targetRole === "bass" ? "bassline" : targetRole === "drums" ? "drum pattern" : `melodic/harmonic part (${preferredInst || "lead"})`;
   const instrumentRules =
     targetRole === "drums"
       ? `- Use a dry drum kit. Choose kick, snare, hi-hat, toms, ride, crash, brushes or percussion as appropriate to the requested style; preserve fills and fast subdivisions.
-- Do not include bass or pitched instruments. Deliver the drum part only.`
-      : `- Pick ONE instrument from this list (they transcribe reliably): ${targetRole === "bass" ? '"synth bass", "electric bass (fingered)", "upright bass"' : '"square-wave synth lead", "flute", "whistling", "ocarina", "marimba"'}. Never guitar, piano, clarinet, strings, pads or choirs (they are hard to transcribe). Candidates may use different instruments.
-- Always include the words "solo", "monophonic", "dry" in the first prompt. No chords, no reverb.`;
+- Do not include bass or pitched instruments. Deliver the drum part only.
+- Require a continuous, non-stop groove across all ${p.bars} bars starting immediately on beat 1 with no intro, no outro, and no silent breakdown bars.`
+      : `- Use ${preferredInst ? `"${preferredInst}" (or a closely matching ${targetRole} instrument if requested in the user's intent)` : targetRole === "bass" ? '"synth bass", "electric bass (fingered)", or "upright bass"' : '"acoustic piano", "electric piano", "clean electric guitar", "flute", "synth lead", or the instrument requested by the user'}.
+- Always include the words "solo", "dry", "continuous ${p.bars}-bar loop, no intro, no rests" in the first prompt. No drums or accompaniment.`;
   const prompt = `You help a beginner music producer. They are writing a ${p.bars}-bar loop at ${p.bpm} BPM in ${p.root} major / its relative minor.
 Current tracks (MIDI, 16th-note steps):
 ${(Object.keys(p.tracks) as TrackId[]).map((id) => "- " + describeTrack(p, id)).join("\n")}

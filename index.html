@@ -55,7 +55,9 @@
           <button id="undo" class="icon-btn" title="元に戻す（Cmd/Ctrl+Z）" aria-label="元に戻す"><svg><use href="#i-undo" /></svg></button>
           <button id="redo" class="icon-btn" title="やり直す（Shift+Cmd+Z / Ctrl+Y）" aria-label="やり直す"><svg><use href="#i-redo" /></svg></button>
         </div>
-        <div class="t-group" role="group" aria-label="書き出し">
+        <div class="t-group" role="group" aria-label="書き出し・読み込み">
+          <button id="importMidi" class="text-btn" title="MIDI ファイル (.mid) を読み込む">MIDI読込</button>
+          <input id="midiFileInput" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden />
           <button id="exportMidi" class="text-btn" title="採用済みの音を .mid にする（手元の DAW で続きを作れる）"><svg><use href="#i-down" /></svg>MIDI</button>
           <button id="exportWav" class="text-btn" title="採用済みの音を 2 ループぶん .wav にする"><svg><use href="#i-down" /></svg>WAV</button>
         </div>
@@ -97,6 +99,10 @@
             </span>
           </div>
           <div class="edit-tools" aria-label="編集範囲とグリッド">
+            <div class="seg tool-seg" role="group" aria-label="編集ツール">
+              <button id="toolDraw" data-tool="draw" aria-pressed="true" title="ペンツール（P）: クリック・横ドラッグで音符を入力">ペン</button>
+              <button id="toolSelect" data-tool="select" aria-pressed="false" title="選択ツール（V / Shift+ドラッグ）: 範囲選択・一括移動・複製(D)・上下移調">選択</button>
+            </div>
             <div class="view-navigation">
               <button id="viewPrev" class="icon-btn" aria-label="前の小節へ" title="前へ"><svg><use href="#i-chevron-left" /></svg></button>
               <label><span class="sr-only">表示開始の小節</span><input id="viewStart" type="number" min="1" value="1" aria-label="表示開始の小節" /></label>
@@ -104,6 +110,7 @@
             </div>
             <label>ズーム<select id="viewBars"><option value="1">1小節</option><option value="2">2小節</option><option value="4" selected>4小節</option><option value="8">8小節</option><option value="16">16小節</option></select></label>
             <label>グリッド<select id="grid"><option value="4">1/4</option><option value="2">1/8</option><option value="1" selected>1/16</option><option value="0.5">1/32</option><option value="0.25">1/64</option><option value="0.125">1/128</option><option value="1.3333333333333333">1/8 三連 (シャッフル)</option><option value="0.6666666666666666">1/16 三連 (シャッフル)</option><option value="0.3333333333333333">1/32 三連</option><option value="0">自由</option></select></label>
+            <button id="quantizeBtn" class="text-btn" title="選択ノート（未選択ならトラック全体）をグリッドにクオンタイズ（Q）">Q 揃える</button>
             <button id="playView" class="icon-btn" aria-label="表示範囲をループ" title="表示範囲をループ"><svg><use href="#i-loop" /></svg></button>
             <input id="timeline" type="range" min="0" max="0" value="0" aria-label="曲内の表示位置" />
           </div>
@@ -156,8 +163,8 @@
             </div>
             <details class="note-details"><summary>メモ</summary><label class="sr-only" for="reason">採用した理由</label><textarea id="reason" rows="2"></textarea></details>
             <div class="row">
-              <button id="close" class="primary">確定</button>
-              <button id="discard" class="text-btn">破棄</button>
+              <button id="close" class="primary">採用して確定</button>
+              <button id="discard" class="text-btn">見送る</button>
             </div>
           </section>
 

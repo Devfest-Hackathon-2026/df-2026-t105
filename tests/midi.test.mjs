@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { toMidiFile } from "../src/core/midi.js";
+import { fromMidiFile, toMidiFile } from "../src/core/midi.js";
 
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -129,4 +129,23 @@ test('midi: short snare rolls and triplets keep their timing and duration',()=>{
  const parsed=parseSmf(toMidiFile([{name:'Snare roll',channel:9,notes}],{bpm:120}));
  const on=parsed.tracks[1].events.filter(e=>e.status===0x99),off=parsed.tracks[1].events.filter(e=>e.status===0x89);
  assert.deepEqual(on.map(e=>e.tick),[0,30,60,90,160]);assert.deepEqual(off.map(e=>e.tick),[15,45,75,105,175]);
+});
+
+test('midi: fromMidiFile round-trips BPM, drums, bass and lead tracks',()=>{
+ const origTracks=[
+  {name:'ピアノ',channel:0,program:0,notes:[{step:0,len:4,pitch:60,vel:0.8},{step:4,len:2,pitch:64,vel:0.75}]},
+  {name:'エレキベース',channel:1,program:33,notes:[{step:0,len:8,pitch:36,vel:0.9}]},
+  {name:'ドラム',channel:9,program:0,notes:[{step:0,len:1,pitch:36,vel:0.95},{step:4,len:1,pitch:38,vel:0.85}]},
+ ];
+ const bytes=toMidiFile(origTracks,{bpm:128});
+ const imported=fromMidiFile(bytes);
+ assert.equal(imported.bpm,128);
+ assert.equal(imported.tracks.length,3);
+ assert.equal(imported.tracks[0].name,'ピアノ');
+ assert.equal(imported.tracks[0].role,'lead');
+ assert.equal(imported.tracks[0].notes.length,2);
+ assert.equal(imported.tracks[1].role,'bass');
+ assert.equal(imported.tracks[1].program,33);
+ assert.equal(imported.tracks[2].role,'drums');
+ assert.equal(imported.tracks[2].channel,9);
 });

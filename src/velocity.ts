@@ -4,19 +4,21 @@ import type { Note, Project, TrackId } from "./state";
 
 /**
  * ベロシティ欄。ピアノロールと同じ横位置に、ノートごとの強さを縦棒で描く。
- * 棒の上をドラッグすると強さが変わり、離したときに onChange で確定する（元に戻すの対象になる）。
+ * 棒の上をドラッグ（または横になぞって連続ペイント）すると強さが変わり、離したときに onChange で確定する。
  */
 export class VelocityLane {
-  startBar=0;
-  viewBars=4;
+  startBar = 0;
+  viewBars = 4;
+  isSelected: (n: Note) => boolean = () => false;
   private ctx: CanvasRenderingContext2D;
-  private drag: { pointerId: number; note: Note; vel: number } | null = null;
+  private drag: { pointerId: number; edits: Map<Note, number> } | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
     private get: () => Project,
     private track: () => TrackId,
     private onChange: (track: TrackId, note: Note, vel: number) => void,
+    private onBatchChange?: (track: TrackId, edits: Map<Note, number>) => void,
   ) {
     this.ctx = canvas.getContext("2d")!;
     new ResizeObserver(() => this.draw()).observe(canvas);
@@ -36,14 +38,17 @@ export class VelocityLane {
   private velAt(clientY: number) {
     const { r, pad } = this.geom();
     const h = r.height - pad * 2;
-    return Math.max(0.05, Math.min(1, 1 - (clientY - r.top - pad) / h));
+    return Math.round(Math.max(0.05, Math.min(1, 1 - (clientY - r.top - pad) / h)) * 100) / 100;
   }
 
   /** ポインターの列にあるノートのうち、棒の先端がポインターに一番近いもの */
   private pick(e: PointerEvent): Note | null {
     const { r, cw, pad } = this.geom();
-    const step = (e.clientX-r.left-KEY_W)/cw+this.startBar*16;
-    const notes = this.get().tracks[this.track()].notes.filter((n) => Math.abs(n.step-step)*cw<=6);
+    const step = (e.clientX - r.left - KEY_W) / cw + this.startBar * 16;
+    const all = this.get().tracks[this.track()].notes;
+    const hasSel = all.some((n) => this.isSelected(n));
+    const pool = hasSel ? all.filter((n) => this.isSelected(n)) : all;
+    const notes = (pool.length ? pool : all).filter((n) => Math.abs(n.step - step) * cw <= 7);
     if (!notes.length) return null;
     const h = r.height - pad * 2;
     const y = e.clientY - r.top;
@@ -53,13 +58,16 @@ export class VelocityLane {
   private down(e: PointerEvent) {
     const n = this.pick(e);
     if (!n) return;
-    this.drag = { pointerId: e.pointerId, note: n, vel: this.velAt(e.clientY) };
+    const edits = new Map<Note, number>();
+    edits.set(n, this.velAt(e.clientY));
+    this.drag = { pointerId: e.pointerId, edits };
     this.canvas.setPointerCapture(e.pointerId);
     this.draw();
   }
   private move(e: PointerEvent) {
     if (this.drag && e.pointerId === this.drag.pointerId) {
-      this.drag.vel = this.velAt(e.clientY);
+      const n = this.pick(e) ?? [...this.drag.edits.keys()][this.drag.edits.size - 1];
+      if (n) this.drag.edits.set(n, this.velAt(e.clientY));
       this.draw();
       return;
     }
@@ -70,7 +78,12 @@ export class VelocityLane {
     const d = this.drag;
     this.drag = null;
     try { this.canvas.releasePointerCapture(d.pointerId); } catch {}
-    this.onChange(this.track(), d.note, Math.round(d.vel * 100) / 100);
+    if (d.edits.size === 1) {
+      const [[note, vel]] = [...d.edits.entries()];
+      this.onChange(this.track(), note, vel);
+    } else if (d.edits.size > 1 && this.onBatchChange) {
+      this.onBatchChange(this.track(), d.edits);
+    }
   }
 
   draw() {
@@ -97,9 +110,9 @@ export class VelocityLane {
 
     const h = r.height - pad * 2;
     const t = this.get().tracks[this.track()];
-    const bar = (n: Note, vel: number, color: string, alpha: number) => {
-      if(n.step<this.startBar*16||n.step>=(this.startBar+this.viewBars)*16)return;
-      const x = KEY_W + (n.step-this.startBar*16) * cw - 2;
+    const bar = (n: Note, vel: number, color: string, alpha: number, selected = false) => {
+      if (n.step < this.startBar * 16 || n.step >= (this.startBar + this.viewBars) * 16) return;
+      const x = KEY_W + (n.step - this.startBar * 16) * cw - 2;
       const w = Math.max(3, Math.min(cw * 0.6, 8));
       const top = pad + h * (1 - vel);
       c.globalAlpha = alpha;
@@ -108,10 +121,19 @@ export class VelocityLane {
       c.beginPath();
       c.arc(x + w / 2, top, Math.max(2, w / 2 + 0.5), 0, Math.PI * 2);
       c.fill();
+      if (selected) {
+        c.globalAlpha = 1;
+        c.strokeStyle = v("--text");
+        c.lineWidth = 1.2;
+        c.stroke();
+      }
       c.globalAlpha = 1;
     };
     for (const n of t.ghost?.notes ?? []) bar(n, n.vel, v("--ghost"), 0.35);
-    const color = v(`--track-${trackRole(this.get(),this.track())}`);
-    for (const n of t.notes) bar(n, this.drag?.note === n ? this.drag.vel : n.vel, color, 0.9);
+    const color = v(`--track-${trackRole(this.get(), this.track())}`);
+    for (const n of t.notes) {
+      const vel = this.drag?.edits.get(n) ?? n.vel;
+      bar(n, vel, color, 0.9, this.isSelected(n));
+    }
   }
 }

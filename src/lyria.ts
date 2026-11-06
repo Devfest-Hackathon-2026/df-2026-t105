@@ -137,12 +137,23 @@ export function slice(ctx: BaseAudioContext, buf: AudioBuffer, startSec: number,
 
 export type ClipModel = "lyria-3.5" | "lyria-3-clip-preview";
 
-export function buildClipPrompt(spec: LyriaSpec, o: { bpm: number; keyName: string; role: "lead" | "bass" | "drums"; seconds: number; context?: string }): string {
+function fmtTime(sec: number): string {
+  const s = Math.max(1, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+export function buildClipPrompt(
+  spec: LyriaSpec,
+  o: { bpm: number; keyName: string; role: "lead" | "bass" | "drums"; seconds: number; bars?: number; context?: string },
+): string {
   const body = spec.prompts.map((p) => p.text).join(", ");
   const parts = o.role === "drums" ? "drum kit only, no melody, no bass" : "no drums, no chords, no other instruments";
   const key = o.role === "drums" ? "" : `, key of ${o.keyName}`;
   const ctx = o.context ? ` ${o.context}` : "";
-  return `[0:00 - 0:${String(o.seconds).padStart(2, "0")}] A short loop: ${body}.${ctx} ${parts}. Strict steady tempo of ${o.bpm} BPM in 4/4${key}. Deliver ONLY the requested isolated part as a dry DAW stem. Any described accompaniment is reference ONLY and must NOT be rendered. Instrumental only, no vocals, no singing. The track ends at 0:${String(o.seconds).padStart(2, "0")}.`;
+  const bars = o.bars ?? Math.max(1, Math.round(o.seconds / ((60 / o.bpm) * 4)));
+  const exactSec = Math.max(4, Math.ceil((60 / o.bpm) * 4 * bars));
+  const endTag = fmtTime(exactSec);
+  return `[0:00 - ${endTag}] Exact ${bars}-bar continuous DAW loop stem: ${body}.${ctx} ${parts}. Strict steady tempo of ${o.bpm} BPM in 4/4${key}. Start playing immediately on beat 1 at 0:00 with NO intro, NO count-in, NO silent bars, NO breakdowns, and NO outro or fade-out. Maintain a continuous, uninterrupted groove/phrase across all ${bars} bars from 0:00 to ${endTag}. Deliver ONLY the requested isolated part as a dry studio stem. Any described accompaniment is reference ONLY and must NOT be rendered. Instrumental only, no vocals, no singing. The track ends at ${endTag}.`;
 }
 
 /** generateContent で生成し、音声を AudioBuffer にして返す。音声が返らないことがあるので3回まで試す */

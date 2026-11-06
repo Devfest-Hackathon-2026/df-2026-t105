@@ -132,3 +132,83 @@ export function notesToParts(hits, { bpm, bars, startSec = 0, transpose = 0, win
     notes: g.notes.sort((a, b) => a.step - b.step || a.pitch - b.pitch),
   }));
 }
+
+/**
+ * Fill completely empty bars in a multi-bar loop phrase by repeating the nearest active phrase run.
+ * Prevents 1-2 bar dropouts or early endings when generating 8-16 bar loops.
+ */
+export function fillEmptyBars(notes, bars) {
+  if (!notes.length || bars <= 1) return notes;
+  const byBar = Array.from({ length: bars }, (_, b) =>
+    notes.filter((n) => Math.floor(n.step / 16) === b),
+  );
+  const activeIndices = byBar.map((arr, b) => (arr.length > 0 ? b : -1)).filter((b) => b >= 0);
+  if (!activeIndices.length || activeIndices.length === bars) return notes;
+
+  // Group active bars into contiguous runs (e.g., [0, 1], [4, 5, 6, 7])
+  const runs = [];
+  for (const b of activeIndices) {
+    const last = runs[runs.length - 1];
+    if (last && last[last.length - 1] === b - 1) last.push(b);
+    else runs.push([b]);
+  }
+
+  const out = [...notes];
+  for (let b = 0; b < bars; b++) {
+    if (byBar[b].length > 0) continue;
+    // Choose the latest active run before bar b, or the first run if bar 0 is empty
+    let run = runs[0];
+    for (const r of runs) {
+      if (r[0] < b) run = r;
+      else break;
+    }
+    const offset = ((b - run[0]) % run.length + run.length) % run.length;
+    const srcBar = run[offset];
+    const shift = (b - srcBar) * 16;
+    const barEnd = (b + 1) * 16;
+    for (const n of byBar[srcBar]) {
+      const step = roundStep(n.step + shift);
+      const len = Math.max(1 / 960, Math.min(n.len, roundStep(barEnd - step)));
+      out.push({ ...n, step, len });
+    }
+  }
+  return out.sort((a, b) => a.step - b.step || a.pitch - b.pitch);
+}
+
+/**
+ * Consolidate single-stem parts when MuScriptor's 5-second chunk classifier switches instrument
+ * labels mid-phrase (creating 2-bar gaps in the primary instrument), and optionally fill any remaining empty bars.
+ */
+export function consolidateStemParts(parts, { targetRole, targetInstrument, bars, fillGaps = true }) {
+  if (!parts.length) return { primary: null, others: [] };
+  const pitched = parts.filter((p) => p.role !== 'drums');
+  const primary = targetRole === 'drums'
+    ? (parts.find((p) => p.role === 'drums') ?? parts[0])
+    : (pitched.find((p) => p.instrument === targetInstrument) ?? pitched.find((p) => p.role === targetRole) ?? pitched[0] ?? parts[0]);
+  if (!primary) return { primary: null, others: [] };
+
+  const mergedNotes = [...primary.notes];
+  const others = parts.filter((p) => p !== primary).map((p) => ({ ...p, notes: [...p.notes] }));
+
+  // For any bar where primary has 0 notes, absorb notes from compatible secondary parts
+  for (let b = 0; b < bars; b++) {
+    const inBar = (n) => Math.floor(n.step / 16) === b;
+    if (mergedNotes.some(inBar)) continue;
+    const donor = others.find((p) => {
+      if (!p.notes.some(inBar)) return false;
+      if (targetRole === 'drums') return p.role === 'drums' || p.instrument === 'timpani' || p.instrument === 'chromatic_percussion';
+      return p.role !== 'drums';
+    });
+    if (donor) {
+      const taken = donor.notes.filter(inBar);
+      donor.notes = donor.notes.filter((n) => !inBar(n));
+      mergedNotes.push(...taken);
+    }
+  }
+
+  const finalNotes = fillGaps ? fillEmptyBars(mergedNotes, bars) : mergedNotes.sort((a, b) => a.step - b.step || a.pitch - b.pitch);
+  return {
+    primary: { ...primary, notes: finalNotes },
+    others: others.filter((p) => p.notes.length >= 3),
+  };
+}

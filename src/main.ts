@@ -1,15 +1,15 @@
 import { selectAlignedWindow } from "./core/alignment.js";
 import { mapConcurrent } from "./core/concurrency.js";
-import { notesToParts } from "./core/parts.js";
+import { consolidateStemParts, instrumentInfo, notesToParts } from "./core/parts.js";
 import { SOUNDFONT_PRESETS, findSoundFontPreset, midiProgram, normalizePresetId, shortPresetName } from "./soundfont";
 import "./style.css";
 import { Engine, renderMix } from "./audio";
 import { downloadBytes, encodeWav } from "./wav";
 import { cleanToGhost, estimateKey, NOTE_NAMES } from "./core/clean.js";
-import { downloadMidi, toMidiFile } from "./core/midi.js";
+import { downloadMidi, fromMidiFile, toMidiFile } from "./core/midi.js";
 import { intentToSpecs } from "./gemini";
 import { buildClipPrompt, generate, generateClip, serverConfig, slice, type ClipModel } from "./lyria";
-import { KEY_W, Roll } from "./roll";
+import { KEY_W, Roll, type RollTool } from "./roll";
 import { VelocityLane } from "./velocity";
 import { contentBars, demoProject, describeForLyria, load, save, trackRole, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
 import { toMono22k, transcribe, warmUp } from "./transcribe";
@@ -20,17 +20,67 @@ let project: Project = load() ?? demoProject();
 project.bars=contentBars(project);
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+let seekStep = 0;
+function updatePositionLcd(s: number) {
+  const step = s < 0 ? seekStep : s;
+  const bar = Math.floor(step / 16) + 1;
+  const beat = Math.floor((step % 16) / 4) + 1;
+  const sub = Math.floor(step % 4) + 1;
+  $("position").textContent = `${bar}.${beat}.${sub}`;
+}
+
 const engine = new Engine(() => project);
 const roll = new Roll($("roll"), () => project, onEdit);
 if(!project.tracks[roll.track])roll.track=Object.keys(project.tracks)[0] as TrackId;
 roll.onAudition = (pitch) => { void engine.audition(roll.track, pitch).catch((e) => setStatus(e.message, true)); };
-const vel = new VelocityLane($("vel"), () => project, () => roll.track, (id, n, v) => onEdit("move", id, n, { ...n, vel: v }));
+roll.onBatchEdit = (id, notes) => {
+  project.tracks[id].notes = notes;
+  commit();
+};
+roll.onSeek = async (step) => {
+  seekStep = Math.max(0, step);
+  roll.playStep = seekStep;
+  updatePositionLcd(seekStep);
+  if (engine.playing) {
+    engine.stop();
+    try {
+      await engine.start(seekStep, Math.max(seekStep + 16, project.bars * 16), loopEnabled);
+      renderPlay(true);
+    } catch (e) {
+      setStatus((e as Error).message, true);
+      renderPlay(false);
+    }
+  } else {
+    roll.draw();
+  }
+};
+roll.onStateChange = () => {
+  viewBars.value = String(roll.viewBars);
+  vel.viewBars = roll.viewBars;
+  renderTools();
+  renderRollMeta();
+  vel.draw();
+};
+
+const vel = new VelocityLane(
+  $("vel"),
+  () => project,
+  () => roll.track,
+  (id, n, v) => onEdit("move", id, n, { ...n, vel: v }),
+  (id, edits) => {
+    const t = project.tracks[id];
+    t.notes = t.notes.map((n) => (edits.has(n) ? { ...n, vel: edits.get(n)! } : n));
+    commit();
+  },
+);
+vel.isSelected = (n) => roll.selected.has(n);
+
 engine.onStep = (s) => {
   const previous=roll.playStep;
-  roll.playStep = s;
+  roll.playStep = s < 0 ? seekStep : s;
   if(s>=0&&(s>=(roll.startBar+roll.viewBars)*16||(s<previous&&s<roll.startBar*16))){roll.startBar=Math.floor(s/(roll.viewBars*16))*roll.viewBars;renderAll()}
   else roll.draw();
-  $("position").textContent = s < 0 ? "1.1.1" : `${Math.floor(s / 16) + 1}.${Math.floor((s % 16) / 4) + 1}.${(s % 4) + 1}`;
+  updatePositionLcd(s);
 };
 // OS のダークモードを切り替えたら、canvas も描き直す
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderAll());
@@ -66,15 +116,31 @@ playBtn.onclick = async () => {
   const willPlay = !engine.playing;
   stopPreview();
   try {
-    if (willPlay) { setStatus("音源を準備しています"); await engine.start(0,project.bars*16,loopEnabled); setStatus(""); }
-    else engine.stop();
+    if (willPlay) {
+      setStatus("音源を準備しています");
+      const startAt = seekStep >= 0 && seekStep < project.bars * 16 ? seekStep : 0;
+      await engine.start(startAt, project.bars * 16, loopEnabled);
+      setStatus("");
+    } else {
+      engine.stop();
+    }
     renderPlay(willPlay);
   } catch (e) { setStatus((e as Error).message, true); renderPlay(false); }
 };
 $("toStart").onclick = async () => {
   const was = engine.playing;
+  seekStep = 0;
+  roll.playStep = 0;
+  roll.startBar = 0;
+  updatePositionLcd(0);
   engine.stop();
-  if (was) await engine.start(0,project.bars*16,loopEnabled);
+  renderAll();
+  if (was) {
+    await engine.start(0, project.bars * 16, loopEnabled);
+    renderPlay(true);
+  } else {
+    renderPlay(false);
+  }
 };
 const bpmInput = $<HTMLInputElement>("bpm");
 bpmInput.value = String(project.bpm);
@@ -97,11 +163,40 @@ $("viewPrev").onclick=()=>moveView(roll.startBar-roll.viewBars);
 $("viewNext").onclick=()=>moveView(roll.startBar+roll.viewBars);
 timeline.oninput=()=>moveView(Number(timeline.value));
 document.querySelector<HTMLElement>(".roll-wrap")!.addEventListener("wheel",e=>{
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    const zoomLevels = [1, 2, 4, 8, 16];
+    const idx = Math.max(0, zoomLevels.indexOf(roll.viewBars));
+    const nextIdx = Math.max(0, Math.min(zoomLevels.length - 1, idx + (e.deltaY > 0 ? 1 : -1)));
+    if (zoomLevels[nextIdx] !== roll.viewBars) {
+      roll.viewBars = zoomLevels[nextIdx];
+      viewBars.value = String(roll.viewBars);
+      renderAll();
+    }
+    return;
+  }
   if(!e.shiftKey&&Math.abs(e.deltaX)<=Math.abs(e.deltaY))return;
   const delta=e.deltaX||e.deltaY;if(!delta)return;
   e.preventDefault();moveView(roll.startBar+Math.sign(delta)*Math.max(1,Math.round(Math.abs(delta)/80)));
 },{passive:false});
-$<HTMLSelectElement>("grid").onchange=()=>{roll.snap=Number($<HTMLSelectElement>("grid").value);roll.draw()};
+$<HTMLSelectElement>("grid").onchange=()=>{roll.snap=Number($<HTMLSelectElement>("grid").value);roll.defaultLen=null;roll.draw()};
+
+function setTool(tool: RollTool) {
+  roll.tool = tool;
+  renderTools();
+  roll.draw();
+}
+function renderTools() {
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tool]")) {
+    b.setAttribute("aria-pressed", String(b.dataset.tool === roll.tool));
+  }
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tool]")) {
+  b.onclick = () => setTool(b.dataset.tool as RollTool);
+}
+$("quantizeBtn").onclick = () => {
+  if (roll.quantizeSelected()) setStatus("グリッドにクオンタイズしました");
+};
 $("reset").onclick = () => {
   if (!confirmInline($("reset"), "もう一度押すと曲を空にします")) return;
   project = demoProject();
@@ -112,6 +207,48 @@ $("reset").onclick = () => {
   keySel.value = project.root;
   engine.setBars(project.bars);
   commit();
+};
+
+// MIDI の読み込み・書き出し
+const midiFileInput = $<HTMLInputElement>("midiFileInput");
+$("importMidi").onclick = () => midiFileInput.click();
+midiFileInput.onchange = async () => {
+  const file = midiFileInput.files?.[0];
+  midiFileInput.value = "";
+  if (!file) return;
+  try {
+    const parsed = fromMidiFile(await file.arrayBuffer());
+    if (!parsed.tracks.length) throw new Error("MIDI ファイル内に音符が見つかりませんでした");
+    project.bpm = Math.max(60, Math.min(200, parsed.bpm || project.bpm));
+    bpmInput.value = String(project.bpm);
+    engine.setBpm(project.bpm);
+    const nextTracks: Record<string, Project["tracks"][string]> = {};
+    parsed.tracks.forEach((tr, idx) => {
+      const presetId = tr.role === "drums" ? "drum:0" : `sf:${tr.program}`;
+      const preset = findSoundFontPreset(tr.role, presetId);
+      const id: TrackId = idx === 0 && tr.role === "lead" ? "lead" : `track:midi_${idx}_${Date.now().toString(36)}`;
+      nextTracks[id] = {
+        id,
+        name: tr.name || shortPresetName(preset),
+        role: preset.role,
+        instrument: preset.instrument,
+        preset: preset.id,
+        polyphonic: true,
+        notes: tr.notes,
+        mute: false,
+        ghost: null,
+      };
+    });
+    project.tracks = nextTracks;
+    roll.track = Object.keys(project.tracks)[0] as TrackId;
+    roll.selected.clear();
+    roll.startBar = 0;
+    seekStep = 0;
+    commit();
+    setStatus(`MIDI「${file.name}」を読み込みました（${parsed.tracks.length}トラック・${project.bpm} BPM）`);
+  } catch (e) {
+    setStatus(`MIDI を読み込めませんでした: ${(e as Error).message}`, true);
+  }
 };
 
 // 採用済みの音だけを書き出す（ゴーストは含めない）。GM の音色番号: 38 = Synth Bass 1、80 = Lead 1 (square)
@@ -196,27 +333,65 @@ function renderTracks() {
     row.style.setProperty("--tc", `var(--track-${role})`);
     const presetSel = renderPresetSelect(t);
     const ghost = t.ghost ? `<span class="ghost-badge" title="提案があります" aria-label="提案あり"></span>` : "";
+    const dupBtn = `<button class="track-dup" aria-label="${esc(t.name)}を複製" title="${esc(t.name)}を複製">⧉</button>`;
     const delBtn = canDelete ? `<button class="track-del" aria-label="${esc(t.name)}を削除" title="${esc(t.name)}を削除">×</button>` : "";
     row.innerHTML = `<span class="dot"></span>
-      <button class="track-name" title="${esc(t.name)} をエディタで開く">${esc(t.name)}<span class="count">${t.notes.length}音</span>${ghost}</button>
+      <button class="track-name" title="${esc(t.name)} をエディタで開く（ダブルクリックで名前変更）">${esc(t.name)}<span class="count">${t.notes.length}音</span>${ghost}</button>
+      ${dupBtn}
       <button class="solo" aria-label="${esc(t.name)}をソロ" aria-pressed="${!!t.solo}" title="ソロ（このトラックだけ鳴らす）">S</button>
       <button class="mute" aria-label="${esc(t.name)}をミュート" aria-pressed="${t.mute}" title="ミュート">M</button>
       ${delBtn}
       <canvas class="clip" aria-hidden="true"></canvas>
       <input class="vol" type="range" min="-24" max="6" step="1" value="${t.volume ?? 0}" aria-label="${esc(t.name)} の音量" title="音量 ${t.volume ?? 0} dB" />
       ${presetSel}`;
-    const select = () => { showMobilePane("editor");roll.track = t.id; targetSel.value = t.id; renderAll(); };
-    row.querySelector<HTMLButtonElement>(".track-name")!.onclick = select;
+    const select = () => {
+      if (roll.track !== t.id) roll.selected.clear();
+      showMobilePane("editor");
+      roll.track = t.id;
+      targetSel.value = t.id;
+      renderAll();
+    };
+    const nameBtn = row.querySelector<HTMLButtonElement>(".track-name")!;
+    nameBtn.onclick = select;
+    nameBtn.ondblclick = (e) => {
+      e.stopPropagation();
+      const nextName = prompt("トラック名を入力してください", t.name)?.trim();
+      if (nextName && nextName !== t.name) {
+        t.name = nextName;
+        commit();
+      }
+    };
     row.querySelector<HTMLCanvasElement>(".clip")!.onclick = select;
     row.querySelector<HTMLButtonElement>(".mute")!.onclick = () => { t.mute = !t.mute; commit(); };
     row.querySelector<HTMLButtonElement>(".solo")!.onclick = () => { t.solo = !t.solo; commit(); };
+    row.querySelector<HTMLButtonElement>(".track-dup")!.onclick = () => {
+      const id: TrackId = `track:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+      const existingNames = new Set(Object.values(project.tracks).map((tr) => tr.name));
+      let copyName = `${t.name} (複製)`;
+      for (let i = 2; existingNames.has(copyName); i++) copyName = `${t.name} (複製 ${i})`;
+      project.tracks[id] = {
+        ...t,
+        id,
+        name: copyName,
+        notes: t.notes.map((n) => ({ ...n })),
+        ghost: null,
+        alts: null,
+      };
+      roll.track = id;
+      roll.selected.clear();
+      targetSel.value = id;
+      commit();
+    };
     const del = row.querySelector<HTMLButtonElement>(".track-del");
     if (del) {
       del.onclick = () => {
         if (Object.keys(project.tracks).length <= 1) return;
         delete project.tracks[t.id];
         delete comps[t.id];
-        if (!project.tracks[roll.track]) roll.track = Object.keys(project.tracks)[0] as TrackId;
+        if (!project.tracks[roll.track]) {
+          roll.track = Object.keys(project.tracks)[0] as TrackId;
+          roll.selected.clear();
+        }
         commit();
       };
     }
@@ -409,7 +584,8 @@ askBtn.onclick = async () => {
     }
     while(specs.length<requestedCount)specs.push(structuredClone(specs[specs.length%Math.max(1,specs.length)]));
     const barSec = (60 / project.bpm) * 4;
-    const seconds = 2 + barSec * (generationBars + 1);
+    const exactSec = Math.max(4, Math.ceil(barSec * generationBars));
+    const seconds = Math.ceil(barSec * generationBars + 1.5);
     // Lyria は既存トラックの音声を聴けないので、音符の内容を英語の説明にしてプロンプトに添える
     const context = describeForLyria(requestProject, targetId);
     if (model === "realtime" && modelSel.querySelector<HTMLOptionElement>('option[value="realtime"]')!.disabled) {
@@ -433,14 +609,13 @@ askBtn.onclick = async () => {
       const label = model === "lyria-3.5" ? "Lyria 3.5" : "Lyria 3 Clip";
       setStatus(`2/3 ${label} が作曲しています`);
       const keyName = projectKeyName();
-      const clipSec = Math.ceil(seconds + barSec * 2);
+      const clipSec = Math.ceil(exactSec + barSec);
       const res = await mapConcurrent(specs,parallelism,async (spec,k) => {
-        const result=await generateClip(apiKey,{model:model as ClipModel,ctx:engine.context,prompt:buildClipPrompt(spec,{bpm:project.bpm,keyName,role:target,seconds:clipSec,context})});
+        const result=await generateClip(apiKey,{model:model as ClipModel,ctx:engine.context,prompt:buildClipPrompt(spec,{bpm:project.bpm,keyName,role:target,seconds:exactSec,bars:generationBars,context})});
         setPreviewCandidate(k,slice(engine.context,result.buffer,0,Math.min(result.buffer.duration,clipSec)));return result;
       });
       fulls = res.map((r) => r.buffer);
       console.info("作曲に使ったモデル:", res.map((r) => r.model));
-      // 耳コピには1分以上かかるので、その間に案A の原音を流しておく（最大30秒、途中で再生を始めたら止める）
 
       if (res.some((r) => /\[[^\]]*\]\s*[^\[\s]/.test(r.text.replace(/\[\[[^\]]*\]\]/g, "")))) console.warn("歌詞らしきテキストが返った:", res.map((r) => r.text));
     }
@@ -463,25 +638,29 @@ askBtn.onclick = async () => {
         const hits = transcription.notes;
         if(!hits.length)throw new Error("MuScriptorの採譜結果は0音でした。生成音を確認して再試行してください");
         const raw = hits.map((n)=>({startTimeSeconds:n.start,durationSeconds:n.end-n.start,pitchMidi:n.pitch,amplitude:.8,instrument:n.instrument}));
-        const grouped=notesToParts(hits,{bpm:project.bpm,bars:Math.ceil(src.duration*project.bpm/240)+1});
-        const candidates=target==="drums"?grouped.filter(p=>p.role==="drums"):grouped.filter(p=>p.role!=="drums");
-        const selected=candidates.find(p=>p.instrument===t.instrument)??candidates.find(p=>p.role===target)??candidates[0];
-        if(!selected)throw new Error("対象のトラックに対応する音を拾えませんでした。原音を確認してください");
-        const primaryHits=hits.filter(n=>n.instrument===selected.instrument);
-        const prior=cleanToGhost(raw.filter(n=>n.instrument===selected.instrument),{bpm:project.bpm,root:project.root,role:target==="bass"?"bass":"lead",bars:generationBars,conform:model!=="realtime"});
+        const roleHits = target === "drums"
+          ? hits.filter((n) => instrumentInfo(n.instrument).role === "drums" || n.instrument === "timpani" || n.instrument === "chromatic_percussion")
+          : hits.filter((n) => instrumentInfo(n.instrument).role !== "drums");
+        const alignHits = roleHits.length ? roleHits : hits;
+        const rawForPrior = raw.filter((n) => instrumentInfo(n.instrument ?? "").role !== "drums");
+        const prior=cleanToGhost(rawForPrior.length ? rawForPrior : raw,{bpm:project.bpm,root:project.root,role:target==="bass"?"bass":"lead",bars:generationBars,conform:model!=="realtime"});
         const grid=transcription.beatGrid;
         const usableGrid=!!(grid&&Number.isFinite(grid.bpm)&&grid.bpm>0);
         const wantTriplet=/shuffle|シャッフル|swing|スウィング|跳ね|三連|triplet|jazzy|ジャズ|blues|ブルース/i.test(intent+" "+specs[k].prompts.map(p=>p.text).join(" "));
-        const clock=selectAlignedWindow(primaryHits,{bpm:usableGrid?grid.bpm:prior.sourceBpm,bars:generationBars,audioDuration:src.duration,firstDownbeat:usableGrid?(grid.first_downbeat??0):prior.phase,onsetDelay:usableGrid?(grid.onset_delay??0):0,beatGrid:usableGrid?grid:null});
+        const clock=selectAlignedWindow(alignHits,{bpm:usableGrid?grid.bpm:prior.sourceBpm,bars:generationBars,audioDuration:src.duration,firstDownbeat:usableGrid?(grid.first_downbeat??0):prior.phase,onsetDelay:usableGrid?(grid.onset_delay??0):0,beatGrid:usableGrid?grid:null});
         const sub=clock.subdivision??(wantTriplet?6:4);
         const corrected=hits.map(n=>({...n,start:n.start-clock.onsetDelay,end:n.end-clock.onsetDelay}));
-        const parts=notesToParts(corrected,{bpm:clock.sourceBpm,bars:generationBars,startSec:clock.startSec,transpose:prior.transpose??0,windowBeats:clock.windowBeats,subdivision:sub,quantizeStrength:0.85});
-        if(!parts.length)throw new Error("ループ区間に音符を拾えませんでした");
-        const pitched=parts.filter((p)=>p.role!=="drums");
-        const primary=target==="drums"?parts.find((p)=>p.role==="drums"):
-          pitched.find((p)=>p.instrument===t.instrument)??pitched.find((p)=>p.role===target)??pitched[0];
-        if(!primary)throw new Error("対象のトラックに対応する音を拾えませんでした。原音を確認してください");
-        for(const part of parts)for(const note of part.notes)note.step+=startStep;
+        const rawParts=notesToParts(corrected,{bpm:clock.sourceBpm,bars:generationBars,startSec:clock.startSec,transpose:prior.transpose??0,windowBeats:clock.windowBeats,subdivision:sub,quantizeStrength:0.85});
+        if(!rawParts.length)throw new Error("ループ区間に音符を拾えませんでした");
+        const { primary, others } = consolidateStemParts(rawParts, {
+          targetRole: target,
+          targetInstrument: t.instrument,
+          bars: generationBars,
+          fillGaps: true,
+        });
+        if(!primary||!primary.notes.length)throw new Error("対象のトラックに対応する音を拾えませんでした。原音を確認してください");
+        for(const note of primary.notes)note.step+=startStep;
+        for(const part of others)for(const note of part.notes)note.step+=startStep;
         const alignedSec = Math.max(0.5, (clock.endSec ?? (clock.startSec + (60 / clock.sourceBpm) * 4 * generationBars)) - clock.startSec);
         const g:Ghost={startStep,bars:generationBars,notes:primary.notes,conf:primary.notes.map(()=>.8),polyphonic:true,full:fulls[k],startSec:clock.startSec+clock.onsetDelay,sourceBpm:clock.sourceBpm,transpose:prior.transpose,raw:raw.filter((n)=>n.instrument===primary.instrument),ampRatio:0,spec:specs[k],intent,explanation:"",logIndex,label:LABELS[k],proposed:primary.notes.length,accepted:0,model:"MuScriptor"};
         previewBuffers.set(k, slice(engine.context, fulls[k], g.startSec, alignedSec));
@@ -499,7 +678,7 @@ askBtn.onclick = async () => {
         }
         t.polyphonic=true;t.instrument=primary.instrument;t.role=primary.role;t.name=primary.name;t.preset=primary.role==="drums"?"drum:0":`sf:${primary.program}`;
         t.alts!.push(g);touched.add(targetId);
-        for(const part of parts.filter(p=>p!==primary&&(target!=="drums"&&p.notes.length>=3))) {
+        for(const part of others.filter(p=>target!=="drums"&&p.notes.length>=3)) {
           const id:TrackId=Object.values(project.tracks).find(track=>track.id!==targetId&&track.instrument===part.instrument)?.id??`part:${part.instrument}`;
           const track=project.tracks[id]??={id,name:part.name,role:part.role,instrument:part.instrument,preset:part.role==="drums"?"drum:0":`sf:${part.program}`,polyphonic:true,notes:[],mute:false,ghost:null};
           if(!touched.has(id))track.alts=[];
@@ -831,30 +1010,91 @@ function drawTakeBar(cv: HTMLCanvasElement, g: Ghost, bar: number) {
   for (const n of notes) c.fillRect((n.step - bar * 16) * cw + 1, 3 + (hi - n.pitch) * rh, Math.max(2, n.len * cw - 1.5), Math.max(2, rh));
 }
 
+const closedProposals = new Map<number, { trackId: TrackId; alts: Ghost[] }>();
+
+function acceptAllOnTrack(id: TrackId) {
+  const t = project.tracks[id];
+  const g = t?.ghost;
+  if (!g || !g.notes.length) return;
+  t.notes = t.notes.filter((existing) => !g.notes.some((note) => noteConflicts(t.id, existing, note))).concat(g.notes);
+  if (project.log[g.logIndex]) project.log[g.logIndex].accepted += g.notes.length;
+  g.accepted += g.notes.length;
+  g.notes = [];
+  g.conf = [];
+}
+
 function acceptAll() {
-  const t=project.tracks[roll.track],g=t.ghost;
-  if(!g||!g.notes.length)return;
-  t.notes=t.notes.filter(existing=>!g.notes.some(note=>noteConflicts(t.id,existing,note))).concat(g.notes);
-  project.log[g.logIndex].accepted+=g.notes.length;g.accepted+=g.notes.length;
-  g.notes=[];g.conf=[];
+  const t = project.tracks[roll.track], g = t.ghost;
+  if (!g || !g.notes.length) return;
+  acceptAllOnTrack(roll.track);
   commit();
 }
-function closeGhost(keepReason: boolean) {
+
+function closeGhost(adoptAndConfirm: boolean) {
   const t = project.tracks[roll.track];
   if (!t.ghost) return;
   stopPreview();
-  const entry = project.log[t.ghost.logIndex];
+  const logIndex = t.ghost.logIndex;
+  const entry = project.log[logIndex];
   const alts = t.alts ?? [t.ghost];
-  entry.chosen = alts.filter((g) => g.accepted > 0).map((g) => g.label).join("+");
-  const main = alts.reduce((a, b) => (b.accepted > a.accepted ? b : a));
-  entry.spec = main.spec;
-  if (keepReason) entry.reason = $<HTMLTextAreaElement>("reason").value.trim();
+
+  // 見送ったあとでも履歴から再度開けるよう、閉じる前の候補をメモリに保持しておく
+  closedProposals.set(
+    logIndex,
+    {
+      trackId: t.id,
+      alts: alts.map((a) => ({
+        ...a,
+        notes: [...a.notes],
+        conf: [...a.conf],
+        accepted: 0,
+      })),
+    },
+  );
+
+  if (adoptAndConfirm) {
+    // まだ個別に音や小節を選んでいない状態で「採用して確定」を押したときは、表示中の案をそのまま全採用する
+    if (t.ghost.accepted === 0 && t.ghost.notes.length > 0) {
+      acceptAllOnTrack(t.id);
+    }
+    // 同じ生成ジョブで別トラックにも提案が入っている場合、未確定なら合わせて採用する
+    for (const other of Object.values(project.tracks)) {
+      if (other.id !== t.id && other.ghost && other.ghost.logIndex === logIndex) {
+        if (other.ghost.accepted === 0 && other.ghost.notes.length > 0) {
+          acceptAllOnTrack(other.id);
+        }
+      }
+    }
+  } else {
+    // 「見送る」のときは、コンピングで試し置きしていた小節があれば元に戻す
+    const st = comps[t.id];
+    if (st) {
+      for (const [barStr, backupNotes] of Object.entries(st.backup)) {
+        const bar = Number(barStr);
+        const inBar = (n: Note) => Math.floor(n.step / 16) === bar;
+        t.notes = t.notes.filter((n) => !inBar(n)).concat(backupNotes);
+      }
+    }
+    for (const a of alts) a.accepted = 0;
+    if (entry) entry.accepted = 0;
+  }
+
+  if (entry) {
+    entry.chosen = alts.filter((g) => g.accepted > 0).map((g) => g.label).join("+");
+    const main = alts.reduce((a, b) => (b.accepted > a.accepted ? b : a));
+    entry.spec = main.spec;
+    if (adoptAndConfirm) entry.reason = $<HTMLTextAreaElement>("reason").value.trim();
+  }
   $<HTMLTextAreaElement>("reason").value = "";
-  t.ghost = null;
-  t.alts = null;
-  delete comps[t.id];
+  for (const track of Object.values(project.tracks)) {
+    if (track.id === t.id || track.ghost?.logIndex === logIndex) {
+      track.ghost = null;
+      track.alts = null;
+      delete comps[track.id];
+    }
+  }
   engine.setLyria(null);
-  setStatus("");
+  setStatus(adoptAndConfirm ? "提案を採用しました" : "提案を見送りました");
   commit();
 }
 
@@ -899,6 +1139,11 @@ function renderGhostPanel() {
   const occupied=new Set(g.notes.map(n=>Math.floor(n.step/16))).size;
   $("ghostSummary").textContent = g.notes.length?`残り ${g.notes.length}音 · 採用 ${g.accepted}音 · ${occupied}/${g.bars??project.bars}小節`:`${g.accepted}音採用済み`;
   for(const id of ["nudgeL","nudgeR","acceptAll"])$<HTMLButtonElement>(id).disabled=!g.notes.length;
+  $("close").textContent = g.accepted === 0 && g.notes.length > 0
+    ? `案${g.label}を採用して確定`
+    : g.notes.length === 0
+      ? `確定（${g.accepted}音採用済み）`
+      : `確定（${g.accepted}音採用）`;
   if(g.polyphonic)$("spec").insertAdjacentHTML("beforeend",`<div class="params">原音の開始 ${g.startSec.toFixed(2)}秒・推定 ${g.sourceBpm.toFixed(1)} BPM</div>`);
   $("explain").textContent = g.explanation;
   $("explainDetails").hidden = !g.explanation;
@@ -907,12 +1152,25 @@ function renderGhostPanel() {
 function renderLog() {
   const box = $("log");
   if (!project.log.length) { box.innerHTML = `<li class="hint">履歴なし</li>`; return; }
-  box.innerHTML = [...project.log].reverse().map((e) => {
+  box.innerHTML = [...project.log].map((e, idx) => ({ e, idx })).reverse().map(({ e, idx }) => {
     const time = new Date(e.at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
     const what = e.chosen ? `採用 案${esc(e.chosen)}` : e.accepted ? `採用 ${e.accepted}音` : "見送り";
-    return `<li><div class="log-line"><span class="log-time">${time}</span><b class="${e.chosen || e.accepted ? "log-yes" : "log-no"}">${what}</b><span>${project.tracks[e.track]?.name ?? e.track}・${e.accepted}/${e.proposed}音</span></div>
+    const canReopen = !e.chosen && !e.accepted && closedProposals.has(idx);
+    const reopenBtn = canReopen ? `<button class="text-btn reopen-log" data-log="${idx}" style="padding:1px 6px;font-size:11.5px">もう一度開く</button>` : "";
+    return `<li><div class="log-line"><span class="log-time">${time}</span><b class="${e.chosen || e.accepted ? "log-yes" : "log-no"}">${what}</b><span>${project.tracks[e.track]?.name ?? e.track}・${e.accepted}/${e.proposed}音</span>${reopenBtn}</div>
       ${e.reason ? `<div class="reason">${esc(e.reason)}</div>` : ""}<div class="intent">${esc(e.intent)}${e.model ? `（${esc(e.model)}）` : ""}${e.titles ? `<br>${e.titles.map(esc).join(" ／ ")}` : ""}</div></li>`;
   }).join("");
+  for (const b of box.querySelectorAll<HTMLButtonElement>(".reopen-log")) {
+    b.onclick = () => {
+      const logIdx = Number(b.dataset.log);
+      const saved = closedProposals.get(logIdx);
+      if (!saved || !project.tracks[saved.trackId]) return;
+      const tr = project.tracks[saved.trackId];
+      tr.alts = saved.alts.map((a) => ({ ...a, notes: [...a.notes], conf: [...a.conf], accepted: 0 }));
+      showAlt(saved.trackId, 0);
+      setStatus("見送った提案をもう一度開きました");
+    };
+  }
 }
 
 const sens = $<HTMLInputElement>("sens");
@@ -926,11 +1184,41 @@ $("close").onclick = () => closeGhost(true);
 document.addEventListener("keydown", (e) => {
   if ((e.target as HTMLElement).closest("input, textarea, select")) return;
   const mod = e.metaKey || e.ctrlKey;
-  if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
-  if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
+  const key = e.key.toLowerCase();
+  if (mod && key === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+  if (mod && key === "y") { e.preventDefault(); redo(); return; }
+  if (mod && key === "a") { e.preventDefault(); roll.selectAll(); setStatus(`${roll.selected.size}音を選択しました`); return; }
+  if (mod && key === "c") { if (roll.copySelected()) { e.preventDefault(); setStatus(`${roll.selected.size}音をコピーしました`); } return; }
+  if (mod && key === "x") { const n = roll.selected.size; if (roll.cutSelected()) { e.preventDefault(); setStatus(`${n}音を切り取りました`); } return; }
+  if (mod && key === "v") { if (roll.paste()) { e.preventDefault(); setStatus(`${roll.selected.size}音を貼り付けました`); } return; }
+  if ((mod && key === "d") || (!mod && !e.shiftKey && key === "d")) {
+    if (roll.duplicateSelected()) { e.preventDefault(); setStatus(`${roll.selected.size}音を複製しました`); return; }
+  }
+  if (!mod && (e.key === "Delete" || e.key === "Backspace")) {
+    const n = roll.selected.size;
+    if (roll.deleteSelected()) { e.preventDefault(); setStatus(`${n}音を削除しました`); return; }
+  }
+  if (!mod && key === "q") {
+    if (roll.quantizeSelected()) { e.preventDefault(); setStatus("グリッドにクオンタイズしました"); return; }
+  }
+  if (!mod && key === "v") { e.preventDefault(); setTool("select"); return; }
+  if (!mod && (key === "p" || key === "b")) { e.preventDefault(); setTool("draw"); return; }
+  if (!mod && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+    const semi = (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 12 : 1);
+    if (roll.transposeSelected(semi)) { e.preventDefault(); return; }
+  }
+  if (!mod && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    const stepDelta = (e.key === "ArrowRight" ? 1 : -1) * (e.shiftKey ? 4 : (roll.snap || 1));
+    if (roll.nudgeSelected(stepDelta)) { e.preventDefault(); return; }
+  }
   if (e.key === "Tab" && project.tracks[roll.track].ghost) { e.preventDefault(); acceptAll(); }
-  else if (e.key === "Escape") closeGhost(false);
-  else if ((e.key === "1" || e.key === "2") && project.tracks[roll.track].alts) showAlt(roll.track, Number(e.key) - 1);
+  else if (e.key === "Escape") {
+    if (!roll.clearSelection()) closeGhost(false);
+  }
+  else if ((e.key === "1" || e.key === "2" || e.key === "3" || e.key === "4") && project.tracks[roll.track].alts) {
+    const idx = Number(e.key) - 1;
+    if (project.tracks[roll.track].alts![idx]) showAlt(roll.track, idx);
+  }
   else if (e.key === " ") { e.preventDefault(); playBtn.click(); }
   else if (e.key === "Home") { e.preventDefault(); $("toStart").click(); }
 });
@@ -956,9 +1244,18 @@ function confirmInline(btn: HTMLElement, msg: string) {
   return false;
 }
 
+function renderRollMeta() {
+  const t = project.tracks[roll.track];
+  if (!t) return;
+  const selCount = [...roll.selected].filter((n) => t.notes.includes(n)).length;
+  $("rollTitle").textContent = t.name;
+  $("rollMeta").textContent = `${t.notes.length}音${selCount ? `（${selCount}音選択中）` : ""}${t.ghost ? `・提案 ${t.ghost.notes.length}音（案${t.ghost.label}）` : ""}`;
+}
+
 function renderAll() {
   roll.startBar=Math.max(0,roll.startBar);
   viewStart.value=String(roll.startBar+1);
+  viewBars.value=String(roll.viewBars);
   timeline.max=String(Math.max(64,project.bars+32,roll.startBar+roll.viewBars*8));timeline.value=String(roll.startBar);
   vel.startBar=roll.startBar;vel.viewBars=roll.viewBars;
   renderTracks();
@@ -966,9 +1263,9 @@ function renderAll() {
   renderGhostPanel();
   renderLog();
   renderModes();
+  renderTools();
   const t = project.tracks[roll.track];
-  $("rollTitle").textContent = t.name;
-  $("rollMeta").textContent = `${t.notes.length}音${t.ghost ? `・提案 ${t.ghost.notes.length}音（案${t.ghost.label}）` : ""}`;
+  renderRollMeta();
   document.querySelector<HTMLElement>(".lg-note")!.style.background = `var(--track-${trackRole(project,t.id)})`;
   roll.draw();
   vel.draw();

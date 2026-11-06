@@ -150,7 +150,12 @@ export function selectAlignedWindow(notes, { bpm, bars, audioDuration, firstDown
           else metricBonus += b === 0 ? 1.5 : 0.5;
         }
       }
-      const score = occupied.size * 1000 + Math.min(300, at.length) + metricBonus - c.s0 * 0.001;
+      let contiguous = 0;
+      for (let b = 0; b < bars - 1; b++) {
+        if (occupied.has(b) && occupied.has(b + 1)) contiguous++;
+      }
+      const edgeBonus = (occupied.has(0) ? 500 : 0) + (occupied.has(bars - 1) ? 250 : 0) + contiguous * 150;
+      const score = occupied.size * 1000 + edgeBonus + Math.min(300, at.length) + metricBonus - c.s0 * 0.001;
       if (score > best.score) best = { ...c, score };
     }
     const windowBeats = Array.from({ length: windowBeatsCount + 1 }, (_, k) => beatTimeAtIndex(rawBeats, best.bStart + k));
@@ -178,8 +183,13 @@ export function selectAlignedWindow(notes, { bpm, bars, audioDuration, firstDown
   let best = { startSec: candidates[0], score: -Infinity };
   for (const startSec of candidates) {
     const at = notes.filter((n) => n.start - delay >= startSec - 0.04 && n.start - delay < startSec + windowSec);
-    const occupied = new Set(at.map((n) => Math.max(0, Math.floor((n.start - delay - startSec) / barSec))));
-    const score = occupied.size * 1000 + Math.min(300, at.length) - startSec * 0.001;
+    const occupied = new Set(at.map((n) => Math.max(0, Math.min(bars - 1, Math.floor((n.start - delay - startSec) / barSec)))));
+    let contiguous = 0;
+    for (let b = 0; b < bars - 1; b++) {
+      if (occupied.has(b) && occupied.has(b + 1)) contiguous++;
+    }
+    const edgeBonus = (occupied.has(0) ? 500 : 0) + (occupied.has(bars - 1) ? 250 : 0) + contiguous * 150;
+    const score = occupied.size * 1000 + edgeBonus + Math.min(300, at.length) - startSec * 0.001;
     if (score > best.score) best = { startSec, score };
   }
   const synthBeats = Array.from({ length: Math.ceil(audioDuration * effectiveBpm / 60) + 2 }, (_, k) => best.startSec + (k * 60) / effectiveBpm);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {INSTRUMENTS, instrumentInfo, notesToParts, roundStep} from '../src/core/parts.js';
+import {INSTRUMENTS, consolidateStemParts, fillEmptyBars, instrumentInfo, notesToParts, roundStep} from '../src/core/parts.js';
 import {selectAlignedWindow} from '../src/core/alignment.js';
 
 test('instrument parts retain chords, their pitches and shared timing instead of flattening to a lead',()=>{
@@ -50,4 +50,26 @@ test('shuffle beat with unsteady beat_grid and null beats_per_bar aligns downbea
  assert.ok(drums.notes.some(n=>n.pitch===36&&n.step===0));
  // Shuffle upbeat hi-hat in beat 1 sits near 8/3 (2.6667 steps)
  assert.ok(drums.notes.some(n=>n.pitch===42&&Math.abs(n.step-roundStep(8/3))<0.15));
+});
+test('16-bar generation consolidates chunk instrument label switches and fills empty bar gaps',()=>{
+ // Simulate 16-bar take where bars 0-1 are electric_bass, bars 2-3 were mislabeled contrabass by a 5s chunk,
+ // bars 4-5 are empty gap, bars 6-8 are electric_bass, and bars 9-15 are empty gap
+ const hits=[];
+ const addBar=(bar,inst,pitch)=>{
+  for(let beat=0;beat<4;beat++){
+   const t=(bar*4+beat)*0.5;
+   hits.push({instrument:inst,pitch,start:t,end:t+0.4});
+  }
+ };
+ addBar(0,'electric_bass',36);addBar(1,'electric_bass',38);
+ addBar(2,'contrabass',40);addBar(3,'contrabass',41);
+ addBar(6,'electric_bass',43);addBar(7,'electric_bass',45);addBar(8,'electric_bass',47);
+ const rawParts=notesToParts(hits,{bpm:120,bars:16,startSec:0});
+ const {primary}=consolidateStemParts(rawParts,{targetRole:'bass',targetInstrument:'electric_bass',bars:16,fillGaps:true});
+ assert.ok(primary);
+ const occupiedBars=new Set(primary.notes.map(n=>Math.floor(n.step/16)));
+ assert.equal(occupiedBars.size,16,'All 16 bars should be continuously populated without gaps');
+ // Bars 2-3 should have absorbed the contrabass notes (pitches 40, 41)
+ assert.ok(primary.notes.some(n=>Math.floor(n.step/16)===2&&n.pitch===40));
+ assert.ok(primary.notes.some(n=>Math.floor(n.step/16)===3&&n.pitch===41));
 });

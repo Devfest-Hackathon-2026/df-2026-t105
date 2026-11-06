@@ -97,3 +97,126 @@ export function downloadMidi(bytes, filename) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/**
+ * Standard MIDI File (Format 0 / Format 1) を読み込み、BPM とトラック配列に変換する。
+ * @param {Uint8Array | ArrayBuffer} input
+ * @returns {{ bpm: number, ppq: number, tracks: Array<{ name: string, channel: number, program: number, role: "drums" | "bass" | "lead", notes: Array<{ step: number, len: number, pitch: number, vel: number }> }> }}
+ */
+export function fromMidiFile(input) {
+  const b = input instanceof Uint8Array ? input : new Uint8Array(input);
+  const str = (i, n) => Array.from(b.subarray(i, i + n)).map((c) => String.fromCharCode(c)).join("");
+  const be = (i, n) => {
+    let v = 0;
+    for (let k = 0; k < n; k++) v = (v * 256) + b[i + k];
+    return v;
+  };
+  if (b.length < 14 || str(0, 4) !== "MThd") throw new Error("有効な MIDI ファイルではありません");
+  const headLen = be(4, 4);
+  const division = be(12, 2);
+  const ppq = division & 0x8000 ? 480 : Math.max(1, division);
+  let bpm = 120;
+  const roundStep = (s) => Math.round(s * 960) / 960;
+  const toStep = (tick) => roundStep((tick * 4) / ppq);
+
+  const parsedTracks = [];
+  let offset = 8 + headLen;
+  const dec = new TextDecoder();
+  while (offset + 8 <= b.length) {
+    const chunkId = str(offset, 4);
+    const chunkLen = be(offset + 4, 4);
+    const end = Math.min(b.length, offset + 8 + chunkLen);
+    if (chunkId === "MTrk") {
+      let j = offset + 8;
+      let tick = 0;
+      let runningStatus = 0;
+      let trackName = "";
+      /** @type {Map<number, { program: number, active: Map<number, { tick: number, vel: number }[]>, notes: { step: number, len: number, pitch: number, vel: number }[] }>} */
+      const byChan = new Map();
+      const getChan = (ch) => {
+        if (!byChan.has(ch)) byChan.set(ch, { program: 0, active: new Map(), notes: [] });
+        return byChan.get(ch);
+      };
+
+      while (j < end) {
+        let delta = 0;
+        while (j < end) {
+          const by = b[j++];
+          delta = (delta << 7) | (by & 0x7f);
+          if (!(by & 0x80)) break;
+        }
+        tick += delta;
+        if (j >= end) break;
+        let st = b[j];
+        if (st < 0x80) {
+          st = runningStatus;
+        } else {
+          j++;
+          if (st < 0xf0) runningStatus = st;
+        }
+        if (st === 0xff) {
+          const metaType = b[j++];
+          let len = 0;
+          while (j < end) {
+            const by = b[j++];
+            len = (len << 7) | (by & 0x7f);
+            if (!(by & 0x80)) break;
+          }
+          const data = b.subarray(j, j + len);
+          j += len;
+          if (metaType === 0x51 && data.length === 3) {
+            const us = (data[0] << 16) | (data[1] << 8) | data[2];
+            if (us > 0) bpm = Math.max(40, Math.min(240, Math.round(60000000 / us)));
+          } else if (metaType === 0x03 && data.length > 0 && !trackName) {
+            trackName = dec.decode(data).trim();
+          }
+        } else if (st === 0xf0 || st === 0xf7) {
+          let len = 0;
+          while (j < end) {
+            const by = b[j++];
+            len = (len << 7) | (by & 0x7f);
+            if (!(by & 0x80)) break;
+          }
+          j += len;
+        } else {
+          const type = st & 0xf0;
+          const ch = st & 0x0f;
+          const d1 = b[j++] ?? 0;
+          const d2 = (type === 0xc0 || type === 0xd0) ? 0 : (b[j++] ?? 0);
+          const cObj = getChan(ch);
+          if (type === 0xc0) {
+            cObj.program = d1 & 0x7f;
+          } else if (type === 0x90 && d2 > 0) {
+            const stack = cObj.active.get(d1) ?? [];
+            stack.push({ tick, vel: Math.max(0.05, Math.min(1, Math.round((d2 / 127) * 100) / 100)) });
+            cObj.active.set(d1, stack);
+          } else if (type === 0x80 || (type === 0x90 && d2 === 0)) {
+            const stack = cObj.active.get(d1);
+            if (stack && stack.length) {
+              const start = stack.shift();
+              const step = toStep(start.tick);
+              const len = Math.max(roundStep(1 / 8), roundStep(toStep(tick) - step));
+              cObj.notes.push({ step, len, pitch: d1 & 0x7f, vel: start.vel });
+            }
+          }
+        }
+      }
+      for (const [ch, cObj] of byChan.entries()) {
+        if (!cObj.notes.length) continue;
+        const isDrums = ch === 9;
+        const prog = cObj.program;
+        const isBass = !isDrums && ((prog >= 32 && prog <= 39) || prog === 43 || prog === 58);
+        const role = isDrums ? "drums" : isBass ? "bass" : "lead";
+        parsedTracks.push({
+          name: trackName || (isDrums ? "ドラム" : `Track ${parsedTracks.length + 1}`),
+          channel: ch,
+          program: isDrums ? 0 : prog,
+          role,
+          notes: cObj.notes.sort((a, b2) => a.step - b2.step || a.pitch - b2.pitch),
+        });
+      }
+    }
+    offset = end;
+  }
+  return { bpm, ppq, tracks: parsedTracks };
+}
