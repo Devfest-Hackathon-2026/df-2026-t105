@@ -61,7 +61,7 @@ const expected = (60 / p.bpm) * 4 * p.bars * 2 + 1.5;
 check(b.subarray(0, 4).toString() === "RIFF" && Math.abs(seconds - expected) < 0.05, `WAV を書き出せる（${seconds.toFixed(2)} 秒、期待 ${expected.toFixed(2)} 秒）`);
 check(rms > 0.01 && peak < 1, `書き出した音が無音でも割れてもいない（RMS ${rms.toFixed(3)}、ピーク ${peak.toFixed(2)}）`);
 // 8小節に伸ばすと、WAV も2倍の長さになる
-await page.selectOption("#bars", "8");
+await page.click('[data-bars="8"]');
 check((await stored()).bars === 8, "ループを8小節にできる");
 const [dl8] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.click("#exportWav")]);
 const p8 = `${outDir}/8bars-${dl8.suggestedFilename()}`;
