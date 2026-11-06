@@ -17,7 +17,7 @@ engine.onStep = (s) => { roll.playStep = s; roll.draw(); };
 // ---------- API キー ----------
 const KEY_STORE = "ghostnotes.apiKey";
 const apiKeyInput = $<HTMLInputElement>("apiKey");
-apiKeyInput.value = safeGet(KEY_STORE) ?? (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ?? "";
+apiKeyInput.value = safeGet(KEY_STORE) ?? "";
 apiKeyInput.addEventListener("change", () => safeSet(KEY_STORE, apiKeyInput.value.trim()));
 function safeGet(k: string) { try { return localStorage.getItem(k); } catch { return null; } }
 function safeSet(k: string, v: string) { try { localStorage.setItem(k, v); } catch {} }
@@ -107,7 +107,6 @@ const monitorChk = $<HTMLInputElement>("monitor");
 
 askBtn.onclick = async () => {
   const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) { setStatus("右上に Gemini API キーを入れてください", true); apiKeyInput.focus(); return; }
   const target = targetSel.value as "lead" | "bass";
   const intent = intentInput.value.trim() || "この曲に合うシンプルなフレーズ";
   askBtn.disabled = true;

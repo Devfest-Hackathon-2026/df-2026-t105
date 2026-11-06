@@ -4,9 +4,13 @@ import { describeTrack } from "./state";
 const MODEL = "gemini-flash-latest";
 
 async function callJson<T>(apiKey: string, prompt: string, schema: object): Promise<T> {
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+  // キーがあれば直接呼ぶ。なければ同じオリジンの中継サーバー（server/index.mjs）を通す
+  const url = apiKey
+    ? `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`
+    : `${location.origin}/api/gemini/${MODEL}`;
+  const r = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    headers: { "Content-Type": "application/json", ...(apiKey ? { "x-goog-api-key": apiKey } : {}) },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { responseMimeType: "application/json", responseSchema: schema, thinkingConfig: { thinkingLevel: "low" } },

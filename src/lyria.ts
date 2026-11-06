@@ -21,7 +21,10 @@ export type LyriaRun = {
 
 /** Lyria RealTime から seconds 秒ぶん受け取り、AudioBuffer にして返す */
 export async function generate(apiKey: string, run: LyriaRun): Promise<AudioBuffer> {
-  const ai = new GoogleGenAI({ apiKey, apiVersion: "v1alpha" });
+  // キーがなければ、同じオリジンの中継サーバーに WebSocket をつなぐ（キーはサーバー側で付ける）
+  const ai = apiKey
+    ? new GoogleGenAI({ apiKey, apiVersion: "v1alpha" })
+    : new GoogleGenAI({ apiKey: "via-proxy", apiVersion: "v1alpha", httpOptions: { baseUrl: location.origin } });
   const chunks: Int16Array[] = [];
   let mime = "";
   let frames = 0;
@@ -33,6 +36,8 @@ export async function generate(apiKey: string, run: LyriaRun): Promise<AudioBuff
   let finish!: () => void;
   let fail!: (e: unknown) => void;
   const done = new Promise<void>((res, rej) => ((finish = res), (fail = rej)));
+  // 接続直後に失敗すると、await する前に reject されて未処理扱いになるのを防ぐ
+  done.catch(() => {});
 
   const session = await ai.live.music.connect({
     model: "models/lyria-realtime-exp",
@@ -64,8 +69,8 @@ export async function generate(apiKey: string, run: LyriaRun): Promise<AudioBuff
           }
         }
       },
-      onerror: (e) => fail(new Error(`Lyria error: ${(e as ErrorEvent)?.message ?? e}`)),
-      onclose: () => finish(),
+      onerror: (e) => fail(new Error(`Lyria に接続できませんでした${(e as ErrorEvent)?.message ? `: ${(e as ErrorEvent).message}` : ""}`)),
+      onclose: (e) => (frames ? finish() : fail(new Error(`Lyria の接続が閉じました: ${(e as CloseEvent)?.code ?? ""} ${(e as CloseEvent)?.reason ?? ""}`))),
     },
   });
   const rate = () => Number(/rate=(\d+)/.exec(mime)?.[1] ?? 48000);

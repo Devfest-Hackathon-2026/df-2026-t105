@@ -11,8 +11,11 @@ page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") 
 page.on("pageerror", (e) => console.log("[pageerror]", e.message, (e.stack ?? "").split("\n").slice(0, 6).join(" | ")));
 
 await page.goto(url);
-await page.fill("#apiKey", process.env.GEMINI_API_KEY);
-await page.dispatchEvent("#apiKey", "change");
+// SMOKE_DIRECT=1 のときだけブラウザにキーを入れる。既定は中継サーバー経由
+if (process.env.SMOKE_DIRECT === "1") {
+  await page.fill("#apiKey", process.env.GEMINI_API_KEY);
+  await page.dispatchEvent("#apiKey", "change");
+}
 await page.screenshot({ path: `${outDir}/0-initial.png` });
 
 await page.selectOption("#target", "lead");

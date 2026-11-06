@@ -29,6 +29,7 @@ h.write("RIFF", 0); h.writeUInt32LE(36 + pcm.length, 4); h.write("WAVE", 8); h.w
 h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(sr, 24);
 h.writeUInt32LE(sr * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(pcm.length, 40);
 writeFileSync(`${base}.ghost.wav`, Buffer.concat([h, pcm]));
+writeFileSync(`${base}.ghost.json`, JSON.stringify({ bpm, root, role, startSec: res.startSec, notes: res.notes, dropped: res.dropped }));
 
 // 聴き比べ: 元音声の同じ4小節 → 1拍の無音 → 整形後のMIDI → 両方を重ねたもの
 const dur = (64 * step).toFixed(3);
