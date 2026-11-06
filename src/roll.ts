@@ -1,4 +1,4 @@
-import { DRUM_ROWS, RANGE, type Note, type Project, type TrackId } from "./state";
+import { DRUM_ROWS, trackRole, trackRange, type Note, type Project, type TrackId } from "./state";
 
 const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const BLACK = [1, 3, 6, 8, 10];
@@ -56,8 +56,12 @@ export class Roll {
   }
 
   private rows(): { pitch: number; label: string; black: boolean }[] {
-    if (this.track === "drums") return DRUM_ROWS.map((r) => ({ pitch: r.pitch, label: r.name, black: false }));
-    const [lo, hi] = RANGE[this.track];
+    if (trackRole(this.get(),this.track) === "drums") {
+      const t=this.get().tracks[this.track];
+      const pitches=[...new Set([...DRUM_ROWS.map((r)=>r.pitch),...t.notes.map((n)=>n.pitch),...(t.ghost?.notes.map((n)=>n.pitch)??[])])].sort((a,b)=>b-a);
+      return pitches.map((pitch)=>({pitch,label:DRUM_ROWS.find((r)=>r.pitch===pitch)?.name??`Drum ${pitch}`,black:false}));
+    }
+    const [lo, hi] = trackRange(this.get(),this.track);
     const out = [];
     for (let p = hi; p >= lo; p--) out.push({ pitch: p, label: p % 12 === 0 || p === hi ? `${NAMES[p % 12]}${Math.floor(p / 12) - 1}` : "", black: BLACK.includes(p % 12) });
     return out;
@@ -260,7 +264,7 @@ export class Roll {
 
     const y = (p: number) => T + rows.findIndex((row) => row.pitch === p) * rh;
     const t = this.get().tracks[this.track];
-    const noteColor = v(`--track-${this.track}`);
+    const noteColor = v(`--track-${trackRole(this.get(),this.track)}`);
     /** ノートを1個描く。mul で薄くできる（ドラッグ元のプレビュー用） */
     const note = (n: Note, mul = 1) => {
       const yy = y(n.pitch);

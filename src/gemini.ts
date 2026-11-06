@@ -53,7 +53,7 @@ export async function intentToSpecs(apiKey: string, p: Project, target: TrackId,
 - Always include the words "solo", "monophonic", "dry" in the first prompt. No chords, no reverb.`;
   const prompt = `You help a beginner music producer. They are writing a ${p.bars}-bar loop at ${p.bpm} BPM in ${p.root} major / its relative minor.
 Current tracks (MIDI, 16th-note steps):
-${(["drums", "bass", "lead"] as TrackId[]).map((id) => "- " + describeTrack(p, id)).join("\n")}
+${(Object.keys(p.tracks) as TrackId[]).map((id) => "- " + describeTrack(p, id)).join("\n")}
 
 They want a suggestion for the ${role}. Their intent (may be Japanese): """${intent}"""
 
@@ -84,7 +84,7 @@ export async function explainGhost(apiKey: string, p: Project, target: TrackId, 
     : ghost.map((x) => `${x.step}:${names[x.pitch % 12]}${Math.floor(x.pitch / 12) - 1}x${x.len}`).join(" ");
   const prompt = `A beginner asked for: """${intent}""". Key ${p.root} major/relative minor, ${p.bpm} BPM, ${p.bars} bars of 16 steps.
 Existing tracks:
-${(["drums", "bass", "lead"] as TrackId[]).map((id) => "- " + describeTrack(p, id)).join("\n")}
+${(Object.keys(p.tracks) as TrackId[]).map((id) => "- " + describeTrack(p, id)).join("\n")}
 Proposed ${target} notes (step:pitch x length): ${g}
 
 In Japanese, 3 short bullet points: (1) the shape of this phrase (rhythm, contour, repetition), (2) ${target === "drums" ? "how it locks with the existing bassline rhythm (which bass notes share a step with the kick)" : "how it relates to the existing bass/chords (which notes are chord tones, any tension)"}, (3) one concrete thing the user could change by hand to push it further toward their intent. Only state what you can see from the note data; do not invent.`;

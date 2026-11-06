@@ -28,14 +28,14 @@ function vlq(n) {
 }
 
 /** @param {string} s */
-const ascii = (s) => [...s].map((c) => c.charCodeAt(0) & 0x7f);
+const ascii = (s) => [...new TextEncoder().encode(s)];
 
 const strBytes = (s) => [...s].map((c) => c.charCodeAt(0));
 
 /**
  * トラック列を format 1 の SMF バイト列にする。1 ステップ = 16分音符 = ppq/4 ティック。
  * 先頭トラックはテンポと拍子だけのコンダクトトラック。
- * @param {Array<{name:string, channel:number, program?:number, notes:Array<{step:number,len:number,pitch:number,vel:number}>}>} tracks
+ * @param {Array<{name:string, channel:number, port?:number, program?:number, notes:Array<{step:number,len:number,pitch:number,vel:number}>}>} tracks
  * @param {{bpm:number, ppq?:number}} o
  * @returns {Uint8Array}
  */
@@ -54,7 +54,8 @@ export function toMidiFile(tracks, { bpm, ppq = 480 }) {
   for (const tr of tracks) {
     const ch = tr.channel & 0x0f;
     /** @type {Array<[number, number, number[]]>} */ // [tick, offが先=0/on=1, データ]
-    const ev = [[0, 0, [0xff, 0x03, ...vlq(tr.name.length), ...ascii(tr.name)]]];
+    const ev = [[0, 0, [0xff, 0x03, ...vlq(ascii(tr.name).length), ...ascii(tr.name)]]];
+    if (tr.port) ev.push([0, 0, [0xff, 0x21, 1, tr.port & 0x7f]]);
     if (tr.program !== undefined) ev.push([0, 0, [0xc0 | ch, tr.program & 0x7f]]);
     for (const n of tr.notes) {
       const vel = Math.max(1, Math.min(127, Math.round(n.vel * 127)));

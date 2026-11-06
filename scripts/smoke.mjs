@@ -48,7 +48,7 @@ if (await page.locator('[data-alt="1"]').count()) {
   console.log("alts:", (await page.textContent("#alts"))?.replace(/\s+/g, " "));
 }
 // 拾う音の量を減らす → 全部採用 → 理由を残して閉じる
-await page.locator("#sens").fill("35");
+if (await page.locator("#sens").isVisible()) await page.locator("#sens").fill("35");
 console.log("after slider:", await page.textContent("#ghostSummary"));
 await page.keyboard.press("Tab").catch(() => {});
 await page.click("#acceptAll").catch(() => {});

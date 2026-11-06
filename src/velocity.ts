@@ -1,3 +1,4 @@
+import { trackRole } from "./state";
 import { KEY_W } from "./roll";
 import type { Note, Project, TrackId } from "./state";
 
@@ -107,7 +108,7 @@ export class VelocityLane {
       c.globalAlpha = 1;
     };
     for (const n of t.ghost?.notes ?? []) bar(n, n.vel, v("--ghost"), 0.35);
-    const color = v(`--track-${this.track()}`);
+    const color = v(`--track-${trackRole(this.get(),this.track())}`);
     for (const n of t.notes) bar(n, this.drag?.note === n ? this.drag.vel : n.vel, color, 0.9);
   }
 }

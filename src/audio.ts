@@ -1,3 +1,4 @@
+import { trackRole, type TrackRole } from "./state";
 import * as Tone from "tone";
 import { SoundFontPlayer, programFor, renderSoundFont } from "./soundfont";
 import type { Note, Project, Track, TrackId } from "./state";
@@ -31,7 +32,7 @@ type Instruments = {
   bass: Tone.MonoSynth;
   lead: Tone.PolySynth;
   ghost: Tone.PolySynth;
-  channels: Record<TrackId | "ghost", Tone.Channel>;
+  channels: Record<TrackRole | "ghost", Tone.Channel>;
   dispose: () => void;
 };
 
@@ -136,7 +137,7 @@ export class Engine {
       this.ins = makeInstruments(p, Tone.getDestination());
       this.presetKey = key;
     }
-    for (const id of ["drums", "bass", "lead"] as TrackId[]) this.ins.channels[id].volume.value = p.tracks[id].volume ?? 0;
+    for (const id of ["drums", "bass", "lead"] as TrackRole[]) this.ins.channels[id].volume.value = p.tracks[id].volume ?? 0;
   }
 
   private tick(time: number) {
@@ -153,7 +154,7 @@ export class Engine {
   }
 
   private trigger(t: Track, n: Note, time: number, sixteenth: number, ghost: boolean) {
-    if (!this.soundfont.play(t, n, time, n.len * sixteenth * 0.95, ghost)) trigger(this.ins, t.id, n, time, sixteenth, ghost);
+    if (!this.soundfont.play(t, n, time, n.len * sixteenth * 0.95, ghost)) trigger(this.ins, trackRole(this.get(),t.id), n, time, sixteenth, ghost);
   }
 
   /**
@@ -187,7 +188,7 @@ export class Engine {
 
   async start() {
     await Tone.start();
-    await this.soundfont.ready();
+    await this.soundfont.ready(Object.values(this.get().tracks));
     this.soundfont.resume();
     const p = this.get();
     const tr = Tone.getTransport();
@@ -212,7 +213,7 @@ export class Engine {
   /** 鍵盤を押したときなどに、その場で1音鳴らす */
   async audition(id: TrackId, pitch: number) {
     await Tone.start();
-    await this.soundfont.ready();
+    await this.soundfont.ready(Object.values(this.get().tracks));
     this.trigger(this.get().tracks[id], { step: 0, len: 2, pitch, vel: 0.8 }, Tone.now() + 0.01, 60 / this.get().bpm / 4, false);
   }
   setBars(bars: number) {
@@ -231,14 +232,14 @@ export async function renderMix(p: Project, loops = 2): Promise<AudioBuffer> {
   const sixteenth = 60 / p.bpm / 4;
   const loopSec = sixteenth * 16 * p.bars;
   const tail = 1.5;
-  const sfTracks = audibleTracks(p).filter((t) => programFor(t.id, t.preset) !== null);
+  const sfTracks = audibleTracks(p).filter((t) => programFor(trackRole(p,t.id), t.preset) !== null);
   const sf = sfTracks.length ? await renderSoundFont(p, sfTracks, loops, loopSec * loops + tail) : null;
   const rendered = await Tone.Offline(() => {
     const master = new Tone.Gain(0.9).toDestination();
     const ins = makeInstruments(p, master);
     for (let k = 0; k < loops; k++) {
       for (const t of audibleTracks(p)) {
-        for (const n of t.notes.filter((n) => n.step < p.bars * 16 && programFor(t.id, t.preset) === null)) trigger(ins, t.id, n, k * loopSec + n.step * sixteenth, sixteenth, false);
+        for (const n of t.notes.filter((n) => n.step < p.bars * 16 && programFor(trackRole(p,t.id), t.preset) === null)) trigger(ins, trackRole(p,t.id), n, k * loopSec + n.step * sixteenth, sixteenth, false);
       }
     }
   }, loopSec * loops + tail, 2, 44100);

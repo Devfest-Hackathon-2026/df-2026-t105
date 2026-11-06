@@ -28,7 +28,7 @@ npm run dev               # 画面（http://127.0.0.1:5173）。/api と /ws は
 - 両方を設定すると、作曲と Gemini は Vertex、RealTime は AI Studio を使う
 - `MUSCRIPTOR_URL`：muscriptor のサーバー（例 `http://127.0.0.1:8222`）。設定すると、画面右上の設定で「MuScriptor CPU」を選べる。サーバーは `~/src/muscriptor` で `uv run muscriptor serve --model small --device cpu --port 8222` で起動する（HuggingFace でライセンスに同意し、`hf auth login` 済みであること）
 
-- `MUSCRIPTOR_A100_URL`：A100上のMuScriptorへの接続先。既定は `http://127.0.0.1:8223`。`npm run a100` で専用Colab A100・largeモデル・非公開SSH転送を起動し、設定の「耳コピ」で「MuScriptor A100」を選ぶ。Colab CLIの認証と、Hugging Faceでのモデル利用条件への同意・ログインが必要。起動時に認証ファイルの転送を確認する。Ctrl+Cまたは60分でランタイムを停止する。`A100_MODEL=medium`、`A100_MINUTES=30` などで変更できる。
+- `MUSCRIPTOR_A100_URL`：A100上のMuScriptorへの接続先。既定は `http://127.0.0.1:8223`。`npm run a100` で専用Colab A100・mediumモデル・非公開SSH転送を起動し、設定の「耳コピ」で「MuScriptor A100」を選ぶ。Colab CLIの認証と、Hugging Faceでのモデル利用条件への同意・ログインが必要。起動時に認証ファイルの転送を確認する。Ctrl+Cまたは60分でランタイムを停止する。`A100_MODEL=medium`、`A100_MINUTES=30` などで変更できる。
 - 音源はMuScriptor公式配布のMuseScore General。フルート・ピアノ・マリンバ・ベース・ドラムの再生とWAV出力に使う。配布元とライセンスは [音源のライセンス](public/soundfonts/LICENSE-MuseScore-General.txt)。初回再生時に約38MBを読み込む。
 
 - `?demo` を付けて開くと、事前に生成した2案をすぐ出すボタンが出る（実演で生成が遅れたとき用。`npm run make-demo` で作り直せる）。
@@ -46,7 +46,7 @@ npm run dev               # 画面（http://127.0.0.1:5173）。/api と /ws は
 
 DAW としての操作：自分のノートはドラッグで移動、右端のドラッグで長さ変更、動かさずにクリックで削除。Cmd/Ctrl+Z で元に戻す、Shift+Cmd+Z か Ctrl+Y でやり直す。トラックごとに音色・音量・ソロ（S）・ミュート（M）を変えられる。ループの長さは4小節か8小節。
 
-アプリ本体は、選んだ1トラックへの提案を編集する構成を維持している。複数楽器の採譜結果を別々に聴く比較は試聴UIにあり、全楽器を独立した編集トラックへ取り込む機能は未実装。楽器指定は音源分離ではなく、採譜モデルが出せる楽器の制限である。
+標準の採譜は常駐MuScriptor small（CPU）。このサーバーでは `ghostnotes-muscriptor.service` で起動している。別環境では `uvx muscriptor serve --model small --device cpu --port 8222` を起動する。画面は稼働状態を確認して採譜先を表示する。MuScriptorの結果は楽器別の編集トラックとして提案し、和音を単音にまとめない。各パートを採用・編集・再生し、MIDI／WAVへ書き出せる。採譜はジョブとして受け付け、画面には進捗を返す。A100は自動起動しない。楽器指定は音源分離ではなく、採譜モデルが出せる楽器の制限である。
 
 ## 確かめ方
 

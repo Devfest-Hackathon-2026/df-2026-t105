@@ -142,7 +142,7 @@ export function buildClipPrompt(spec: LyriaSpec, o: { bpm: number; keyName: stri
   const parts = o.role === "drums" ? "drum kit only, no melody, no bass" : "no drums, no chords, no other instruments";
   const key = o.role === "drums" ? "" : `, key of ${o.keyName}`;
   const ctx = o.context ? ` ${o.context}` : "";
-  return `[0:00 - 0:${String(o.seconds).padStart(2, "0")}] A short loop: ${body}.${ctx} ${parts}. Strict steady tempo of ${o.bpm} BPM in 4/4${key}. Instrumental only, no vocals, no singing. The track ends at 0:${String(o.seconds).padStart(2, "0")}.`;
+  return `[0:00 - 0:${String(o.seconds).padStart(2, "0")}] A short loop: ${body}.${ctx} ${parts}. Strict steady tempo of ${o.bpm} BPM in 4/4${key}. Deliver ONLY the requested isolated part as a dry DAW stem. Any described accompaniment is reference ONLY and must NOT be rendered. Instrumental only, no vocals, no singing. The track ends at 0:${String(o.seconds).padStart(2, "0")}.`;
 }
 
 /** generateContent で生成し、音声を AudioBuffer にして返す。音声が返らないことがあるので3回まで試す */

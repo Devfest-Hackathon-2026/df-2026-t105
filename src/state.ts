@@ -1,9 +1,11 @@
 export type Note = { step: number; len: number; pitch: number; vel: number };
-export type TrackId = "drums" | "bass" | "lead";
+export type TrackRole = "drums" | "bass" | "lead";
+export type TrackId = TrackRole | `part:${string}`;
 export type Ghost = {
   notes: Note[];
   /** 2小節後にも同じ音が出ていれば高い（0〜1）。耳コピの確からしさの目安 */
   conf: number[];
+  polyphonic?: boolean;
   /** Lyria の出力全体と、ゴーストの 0 ステップ目に当たる秒数 */
   full: AudioBuffer;
   startSec: number;
@@ -32,6 +34,8 @@ export type Ghost = {
 export type Track = {
   id: TrackId;
   name: string;
+  role?: TrackRole;
+  instrument?: string;
   notes: Note[];
   mute: boolean;
   /** ソロ。どれかのトラックがソロなら、ソロのトラックだけを鳴らす */
@@ -82,7 +86,7 @@ export const DRUM_ROWS = [
   { pitch: 38, name: "Snare" },
   { pitch: 36, name: "Kick" },
 ];
-export const RANGE: Record<TrackId, [number, number]> = {
+export const RANGE: Record<TrackRole, [number, number]> = {
   drums: [36, 42],
   bass: [28, 52],
   lead: [57, 84],
@@ -144,7 +148,7 @@ export function describeTrack(p: Project, id: TrackId): string {
   if (!t.notes.length) return `${t.name}: (empty)`;
   const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const n = [...t.notes].sort((a, b) => a.step - b.step);
-  if (id === "drums") {
+  if (trackRole(p,id) === "drums") {
     const row = (pitch: number) =>
       n.filter((x) => x.pitch === pitch && x.step < 16).map((x) => x.step).join(",");
     return `Drums (bar 1 steps, 16th grid): kick[${row(36)}] snare[${row(38)}] hat[${row(42)}]`;
@@ -160,7 +164,7 @@ export function describeForLyria(p: Project, target: TrackId): string {
   const dur = (len: number) => { const b = len / 4; return Number.isInteger(b) ? String(b) : String(parseFloat(b.toFixed(2))); };
   const DR: Record<number, string> = { 35: "kick", 36: "kick", 38: "snare", 40: "snare", 42: "closed hat", 44: "pedal hat", 46: "open hat", 49: "crash", 51: "ride" };
   const parts: string[] = [];
-  for (const id of ["drums", "bass", "lead"] as TrackId[]) {
+  for (const id of Object.keys(p.tracks) as TrackId[]) {
     if (id === target) continue;
     const notes = [...p.tracks[id].notes].sort((a, b) => a.step - b.step);
     if (!notes.length) continue;
@@ -168,7 +172,7 @@ export function describeForLyria(p: Project, target: TrackId): string {
     for (let b = 0; b < p.bars; b++) {
       const bar = notes.filter((n) => Math.floor(n.step / 16) === b);
       if (!bar.length) continue;
-      if (id === "drums") {
+      if (trackRole(p,id) === "drums") {
         const groups = new Map<number, number[]>();
         for (const n of bar) (groups.get(n.pitch) ?? groups.set(n.pitch, []).get(n.pitch)!).push(Number(beat(n.step)));
         bodies.push({ bar: b + 1, body: [...groups].map(([p2, bs]) => `${DR[p2] ?? `drum${p2}`}@${bs.join(",")}`).join(" ") });
@@ -189,4 +193,12 @@ export function describeForLyria(p: Project, target: TrackId): string {
   if (!parts.length) return "";
   const unit = target === "drums" ? "hit positions are beat numbers" : "note length is in beats";
   return `The new part plays together with this existing loop (${unit}): ${parts.join("; ")}. Make it fit around them.`;
+}
+
+export function trackRole(p: Project, id: TrackId): TrackRole { return p.tracks[id]?.role ?? (id === "drums" || id === "bass" ? id : "lead"); }
+export function trackRange(p: Project, id: TrackId): [number,number] {
+  if(!id.startsWith("part:"))return RANGE[trackRole(p,id)];
+  const notes = [...p.tracks[id].notes, ...(p.tracks[id].ghost?.notes ?? [])];
+  const fallback = RANGE[trackRole(p,id)];
+  return notes.length ? [Math.max(0,Math.min(fallback[0],...notes.map((n)=>n.pitch))-2),Math.min(127,Math.max(fallback[1],...notes.map((n)=>n.pitch))+2)] : fallback;
 }

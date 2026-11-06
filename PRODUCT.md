@@ -23,11 +23,11 @@ Lyria に演奏させたフレーズを耳コピして、ピアノロール上�
 - 大会テーマは "Own the Why, Build with Intent."（AI に丸投げせず、人が理由を持って作る）。
 
 ## Capabilities and Constraints
-- トラックは Drums、Bass、Lead の3本固定。ループは4小節か8小節。キーとテンポは曲ごとに1つ。
+- 初期トラックはDrums、Bass、Leadの3本。MuScriptorの採譜結果は楽器ごとの追加トラックになる。ループは4小節か8小節。キーとテンポは曲ごとに1つ。
 - 提案の対象は Lead、Bass、Drums（試験的）。提案は既定1案。設定から2案にもできる。
-- 耳コピはブラウザのbasic-pitch、MuScriptor CPU、MuScriptor A100から選ぶ。A100は専用Colabへの非公開SSH転送を使う。Lyria と Gemini は中継サーバー経由。
+- 耳コピは常駐CPUのMuScriptor smallが標準。ブラウザのBasic Pitchと、別途起動したMuScriptor A100も選べる。A100は専用Colabへの非公開SSH転送を使う。Lyria と Gemini は中継サーバー経由。
 - MuseScore Generalをドラム・旋律・ベースの再生とWAV出力に使う。
-- 別画面の試聴比較UIで、生成プロンプトと5つの採譜経路を条件を伏せて評価できる。small・medium・largeのA100計算済み音源を使う。評価はブラウザ保存・JSON書き出し。アプリ本体で全楽器を独立した編集トラックにする機能は未実装。
+- 別画面の試聴比較UIで、生成プロンプトと5つの採譜経路を条件を伏せて評価できる。small・medium・largeのA100計算済み音源を使う。評価はブラウザ保存・JSON書き出し。本体でも楽器ごとの編集トラックに取り込める。
 - MIDI と WAV に書き出せる。元に戻す・やり直す、音色・音量・ソロ・ミュートがある。
 - 用語: 「ゴースト」「提案」「案A／案B」「採用」「判断の記録」。
 

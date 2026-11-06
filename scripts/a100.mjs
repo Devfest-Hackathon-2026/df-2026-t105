@@ -5,7 +5,7 @@ import { tmpdir, homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { setTimeout as delay } from "node:timers/promises";
-const model = process.env.A100_MODEL ?? "large";
+const model = process.env.A100_MODEL ?? "medium";
 const minutes = Number(process.env.A100_MINUTES ?? 60);
 const port = Number(process.env.A100_PORT ?? 8223);
 if (!["small", "medium", "large"].includes(model) || !Number.isFinite(minutes) || minutes < 1 || !Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("A100_MODEL / A100_MINUTES / A100_PORT を確認してください");

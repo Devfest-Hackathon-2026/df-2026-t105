@@ -1,3 +1,4 @@
+import { createTranscriptionJobs } from "./transcription-jobs.mjs";
 import { parseTranscription } from "./transcription.mjs";
 // 公開用の中継サーバー。API キーや GCP の認証はこのサーバーだけが持ち、ブラウザには渡さない。
 // - GET  /*                       : ビルド済みの画面（dist/）を返す
@@ -31,8 +32,13 @@ if (!KEY && !VERTEX_PROJECT) {
 }
 const BACKEND = VERTEX_PROJECT ? "vertex" : "aistudio";
 // muscriptor のサーバー（`muscriptor serve`）。設定されていれば、ドラムなどの耳コピに使う
-const MUSCRIPTOR_URL = process.env.MUSCRIPTOR_URL;
+const MUSCRIPTOR_URL = process.env.MUSCRIPTOR_URL ?? "http://127.0.0.1:8222";
 const MUSCRIPTOR_A100_URL = process.env.MUSCRIPTOR_A100_URL ?? "http://127.0.0.1:8223";
+const transcriptionJobs = createTranscriptionJobs({ cpuUrl: MUSCRIPTOR_URL, a100Url: MUSCRIPTOR_A100_URL });
+async function transcriberHealth(endpoint) {
+  if (!endpoint) return false;
+  try { return (await fetch(`${endpoint.replace(/\/$/, "")}/health`, { signal: AbortSignal.timeout(1000) })).ok; } catch { return false; }
+}
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
 const ALLOWED_MODELS = new Set(["gemini-flash-latest", "gemini-3.5-flash-lite"]);
 // 画面が指定する作曲モデル → 実際に呼ぶモデル。Vertex には 3.5 がないので 3 Pro で代える
@@ -206,10 +212,28 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     if (url.pathname === "/healthz") { res.writeHead(200).end("ok"); return; }
     if (url.pathname === "/api/config") {
-      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
-        backend: BACKEND, realtime: !!KEY, music: Object.keys(MUSIC_MODELS), musicModels: MUSIC_MODELS, transcriber: MUSCRIPTOR_URL ? "muscriptor" : "basic-pitch", transcribers: { cpu: !!MUSCRIPTOR_URL, a100: true },
+      const [cpu, a100] = await Promise.all([transcriberHealth(MUSCRIPTOR_URL), transcriberHealth(MUSCRIPTOR_A100_URL)]);
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({
+        backend: BACKEND, realtime: !!KEY, music: Object.keys(MUSIC_MODELS), musicModels: MUSIC_MODELS,
+        transcriber: cpu ? "muscriptor" : "basic-pitch", transcribers: { cpu, a100 },
+        transcription: { default: cpu ? "cpu" : a100 ? "a100" : "browser", models: { cpu: "small", a100: process.env.A100_MODEL ?? "medium" } },
       }));
       return;
+    }
+    if (url.pathname === "/api/transcription-jobs" && req.method === "POST") {
+      if (!allow(clientIp(req), "transcribe")) { res.writeHead(429).end("too many requests"); return; }
+      const body = await readBody(req, 20 * 1024 * 1024);
+      if (!body) { res.writeHead(413).end(); return; }
+      try {
+        const job = transcriptionJobs.create(body, { backend: url.searchParams.get("backend") ?? "a100", instruments: (url.searchParams.get("instruments") ?? "").split(",").filter(Boolean) });
+        res.writeHead(202, { "Content-Type": "application/json" }).end(JSON.stringify(job));
+      } catch(e) { res.writeHead(429).end(e.message); }
+      return;
+    }
+    const jobMatch = /^\/api\/transcription-jobs\/([a-f0-9-]+)$/.exec(url.pathname);
+    if (jobMatch && req.method === "GET") {
+      const job = transcriptionJobs.get(jobMatch[1]);
+      res.writeHead(job ? 200 : 404, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(job ?? { error: "採譜ジョブが見つかりません" })); return;
     }
     if (url.pathname === "/api/transcribe" && req.method === "POST") return await transcribeWithMuscriptor(req, res, url);
     const mm = /^\/api\/music\/([\w.-]+)$/.exec(url.pathname);

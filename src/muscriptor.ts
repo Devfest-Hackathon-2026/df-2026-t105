@@ -6,15 +6,24 @@ import { encodeMonoWav } from "./wav";
 export type MusNote = { pitch: number; start: number; end: number; instrument: string };
 
 /** 中継サーバー経由で muscriptor に採譜を頼む（サーバーに MUSCRIPTOR_URL が設定されているときだけ使える） */
-export async function transcribeWithMuscriptor(mono: Float32Array, sampleRate: number, instruments: string[], backend: "cpu" | "a100" = "cpu"): Promise<MusNote[]> {
-  const r = await fetch(`${location.origin}/api/transcribe?instruments=${encodeURIComponent(instruments.join(","))}&backend=${backend}`, {
-    method: "POST",
-    headers: { "Content-Type": "audio/wav" },
-    body: encodeMonoWav(mono, sampleRate),
+export async function transcribeWithMuscriptor(mono: Float32Array, sampleRate: number, instruments: string[], backend: "cpu" | "a100" = "cpu", onStatus: (text: string) => void = () => {}): Promise<MusNote[]> {
+  const r = await fetch(`${location.origin}/api/transcription-jobs?instruments=${encodeURIComponent(instruments.join(","))}&backend=${backend}`, {
+    method: "POST", headers: { "Content-Type": "audio/wav" }, body: encodeMonoWav(mono, sampleRate),
   });
-  if (!r.ok) throw new Error(`muscriptor の採譜に失敗しました（${r.status}）: ${(await r.text()).slice(0, 200)}`);
-  const { events } = (await r.json()) as { events: { type: string; pitch?: number; start_time?: number; end_time?: number; index?: number; instrument?: string; start_event_index?: number }[] };
-  return muscriptorNotes(events);
+  if (!r.ok) throw new Error(`採譜ジョブを開始できませんでした（${r.status}）: ${(await r.text()).slice(0, 200)}`);
+  const { id } = await r.json();
+  const phases: Record<string,string> = { queued: "採譜の順番を待っています", allocating: "A100を確保しています", loading: "MuScriptorを準備しています", preparing: "採譜の準備をしています", transcribing: "MuScriptorで採譜しています" };
+  const deadline = Date.now() + 600_000;
+  while (Date.now() < deadline) {
+    const response = await fetch(`${location.origin}/api/transcription-jobs/${id}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("採譜ジョブの状態を確認できませんでした");
+    const job = await response.json();
+    if (job.status === "done") return muscriptorNotes(job.events);
+    if (job.status === "error") throw new Error(job.error);
+    onStatus(phases[job.phase] ?? phases[job.status] ?? "採譜しています");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error("採譜ジョブが時間内に完了しませんでした。サーバーを確認してください");
 }
 
 /** GM のドラムの音番号を、Ghostnotes の3つの行（キック 36、スネア 38、ハイハット 42）にまとめる */

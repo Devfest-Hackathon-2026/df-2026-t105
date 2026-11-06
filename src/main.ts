@@ -1,5 +1,5 @@
+import { notesToParts } from "./core/parts.js";
 import { midiProgram } from "./soundfont";
-import { muscriptorInstruments } from "./core/muscriptor.js";
 import "./style.css";
 import { Engine, PRESETS, renderMix } from "./audio";
 import { downloadBytes, encodeWav } from "./wav";
@@ -9,7 +9,7 @@ import { intentToSpecs } from "./gemini";
 import { buildClipPrompt, generate, generateClip, serverConfig, slice, type ClipModel } from "./lyria";
 import { KEY_W, Roll } from "./roll";
 import { VelocityLane } from "./velocity";
-import { demoProject, describeForLyria, load, save, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
+import { demoProject, describeForLyria, load, save, trackRole, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
 import { toMono22k, transcribe, warmUp } from "./transcribe";
 import { estimateStartSec, transcribeDrums } from "./core/drums.js";
 import { drumsToGhost, transcribeWithMuscriptor } from "./muscriptor";
@@ -90,6 +90,7 @@ barsSel.onchange = () => {
 $("reset").onclick = () => {
   if (!confirmInline($("reset"), "もう一度押すとデモ曲に戻します")) return;
   project = demoProject();
+  roll.track = "lead";
   for (const t of Object.values(project.tracks)) t.ghost = null;
   engine.setLyria(null);
   bpmInput.value = String(project.bpm);
@@ -101,15 +102,12 @@ $("reset").onclick = () => {
 
 // 採用済みの音だけを書き出す（ゴーストは含めない）。GM の音色番号: 38 = Synth Bass 1、80 = Lead 1 (square)
 $("exportMidi").onclick = () => {
-  const tr = project.tracks;
-  const bytes = toMidiFile(
-    [
-      { name: "Drums", channel: 9, notes: tr.drums.notes },
-      { name: "Bass", channel: 1, program: midiProgram("bass", tr.bass.preset), notes: tr.bass.notes },
-      { name: "Lead", channel: 0, program: midiProgram("lead", tr.lead.preset), notes: tr.lead.notes },
-    ],
-    { bpm: project.bpm },
-  );
+  let melodic = 0;
+  const tracks=Object.values(project.tracks).map((t)=>{
+    const role=trackRole(project,t.id),index=melodic++,port=Math.floor(index/15),slot=index%15;
+    return {name:t.name,port,channel:role==="drums"?9:(slot>=9?slot+1:slot),program:midiProgram(role,t.preset),notes:t.notes};
+  });
+  const bytes=toMidiFile(tracks,{bpm:project.bpm});
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
@@ -137,8 +135,9 @@ function renderTracks() {
   for (const t of Object.values(project.tracks)) {
     const row = document.createElement("div");
     row.className = "track" + (roll.track === t.id ? " selected" : "");
-    row.style.setProperty("--tc", `var(--track-${t.id})`);
-    const presets = t.id === "drums" ? null : PRESETS[t.id];
+    row.style.setProperty("--tc", `var(--track-${trackRole(project,t.id)})`);
+    const presets = trackRole(project,t.id) === "drums" ? null : PRESETS[trackRole(project,t.id) as "lead" | "bass"];
+    if(presets && t.preset && !presets.some((p)=>p.id===t.preset)) presets.push({id:t.preset,name:t.name});
     const presetSel = presets
       ? `<select class="preset" aria-label="${t.name} の音色">${presets.map((p) => `<option value="${p.id}" ${p.id === (t.preset ?? presets[0].id) ? "selected" : ""}>${p.name}</option>`).join("")}</select>`
       : `<span class="hint preset">ドラムキット</span>`;
@@ -150,7 +149,7 @@ function renderTracks() {
       <canvas class="clip" aria-hidden="true"></canvas>
       <input class="vol" type="range" min="-24" max="6" step="1" value="${t.volume ?? 0}" aria-label="${t.name} の音量" title="音量 ${t.volume ?? 0} dB" />
       ${presetSel}`;
-    const select = () => { roll.track = t.id; if (t.id !== "drums" || targetSel.querySelector('option[value="drums"]')) targetSel.value = t.id; renderAll(); };
+    const select = () => { roll.track = t.id; if (t.id !== "drums" || targetSel.querySelector('option[value="drums"]')) targetSel.value = trackRole(project,t.id); renderAll(); };
     row.querySelector<HTMLButtonElement>(".track-name")!.onclick = select;
     row.querySelector<HTMLCanvasElement>(".clip")!.onclick = select;
     row.querySelector<HTMLButtonElement>(".mute")!.onclick = () => { t.mute = !t.mute; commit(); };
@@ -191,7 +190,7 @@ function drawClip(cv: HTMLCanvasElement, id: TrackId) {
     c.fillRect(n.step * cw, 3 + (hi - n.pitch) * rh, Math.max(1.5, n.len * cw - 0.5), Math.max(1.5, rh));
   };
   for (const n of t.ghost?.notes ?? []) draw(n, v("--ghost"), 0.45);
-  for (const n of t.notes) draw(n, v(`--track-${id}`), 1);
+  for (const n of t.notes) draw(n, v(`--track-${trackRole(project,id)}`), 1);
   c.globalAlpha = 1;
 }
 
@@ -208,13 +207,13 @@ function onEdit(kind: EditKind, id: TrackId, n: Note, next?: Note) {
       len: Math.max(1, Math.min(steps - Math.max(0, Math.round(next.step)), Math.round(next.len))),
     };
     const others = t.notes.filter((x) => x !== n);
-    t.notes = others.filter((x) => !(x.step < m.step + m.len && m.step < x.step + x.len && (id !== "drums" ? true : x.pitch === m.pitch)));
+    t.notes = others.filter((x) => !(x.step < m.step + m.len && m.step < x.step + x.len && ((id === "lead" || id === "bass") ? true : x.pitch === m.pitch)));
     t.notes.push(m);
     commit();
     return;
   }
   if (kind === "add") {
-    if (id !== "drums") t.notes = t.notes.filter((x) => !(x.step < n.step + n.len && n.step < x.step + x.len));
+    if (id === "lead" || id === "bass") t.notes = t.notes.filter((x) => !(x.step < n.step + n.len && n.step < x.step + x.len));
     t.notes.push(n);
   } else if (kind === "remove") t.notes = t.notes.filter((x) => x !== n);
   else if (t.ghost) {
@@ -223,7 +222,7 @@ function onEdit(kind: EditKind, id: TrackId, n: Note, next?: Note) {
     t.ghost.conf.splice(i, 1);
     if (kind === "accept") {
       // ドラムは同じ位置に違う楽器（キックとハイハットなど）が並ぶので、同じ楽器の重なりだけを消す
-      t.notes = t.notes.filter((x) => !(x.step < n.step + n.len && n.step < x.step + x.len && (id !== "drums" || x.pitch === n.pitch)));
+      t.notes = t.notes.filter((x) => !(x.step < n.step + n.len && n.step < x.step + x.len && (id === "lead" || id === "bass" || x.pitch === n.pitch)));
       t.notes.push(n);
       project.log[t.ghost.logIndex].accepted++;
       t.ghost.accepted++;
@@ -244,17 +243,17 @@ modelSel.value = safeGet(MODEL_KEY) ?? "lyria-3.5";
 // 中継サーバーが Vertex を使うときは 3.5 の代わりに 3 Pro になり、AI Studio のキーがなければ RealTime は使えない
 // サーバー側に muscriptor があれば、ドラムの耳コピに使う（帯域の音量で拾う drums.js より、キックとスネアの取り違えが少ない）
 const transcriberSel = $<HTMLSelectElement>("transcriber");
-transcriberSel.value = safeGet("ghostnotes.transcriber") ?? "browser";
-transcriberSel.onchange = () => safeSet("ghostnotes.transcriber", transcriberSel.value);
+transcriberSel.value = safeGet("ghostnotes.transcriber.v2") ?? "cpu";
+transcriberSel.onchange = () => safeSet("ghostnotes.transcriber.v2", transcriberSel.value);
 const candidateCount = $<HTMLSelectElement>("candidateCount");
 candidateCount.value = safeGet("ghostnotes.candidateCount") ?? "1";
 candidateCount.onchange = () => safeSet("ghostnotes.candidateCount", candidateCount.value);
 let requestedCount = 1;
 void serverConfig().then((c) => {
   if (!c) return;
-  const cpuAvailable = (c as { transcriber?: string }).transcriber === "muscriptor";
-  transcriberSel.querySelector<HTMLOptionElement>('option[value="cpu"]')!.disabled = !cpuAvailable;
-  if (!cpuAvailable && transcriberSel.value === "cpu") transcriberSel.value = "browser";
+  const available = (c as { transcribers?: { cpu: boolean; a100: boolean }; transcription?: { default: string } });
+  for (const backend of ["cpu", "a100"] as const) transcriberSel.querySelector<HTMLOptionElement>(`option[value="${backend}"]`)!.disabled = !available.transcribers?.[backend];
+  if (transcriberSel.selectedOptions[0]?.disabled) transcriberSel.value = available.transcription?.default ?? "browser";
   const opt35 = modelSel.querySelector<HTMLOptionElement>('option[value="lyria-3.5"]')!;
   if (c.musicModels["lyria-3.5"] === "lyria-3-pro-preview") opt35.textContent = "Lyria 3 Pro（音質重視・Vertex）";
   const rt = modelSel.querySelector<HTMLOptionElement>('option[value="realtime"]')!;
@@ -265,7 +264,7 @@ modelSel.onchange = () => safeSet(MODEL_KEY, modelSel.value);
 
 /** 曲のキーを、ベースとリードの音から「A minor」のような名前にする（Lyria 3.5 へのプロンプト用） */
 function projectKeyName(): string {
-  const notes = [...project.tracks.bass.notes, ...project.tracks.lead.notes];
+  const notes = Object.values(project.tracks).filter((t)=>trackRole(project,t.id)!=="drums").flatMap((t)=>t.notes);
   const root = NOTE_NAMES.indexOf(project.root);
   if (notes.length < 4) return `${project.root} major`;
   const k = estimateKey(notes);
@@ -296,6 +295,8 @@ askBtn.onclick = async () => {
   requestedCount = candidateCount.value === "2" ? 2 : 1;
   const backend = transcriberSel.value as "browser" | "cpu" | "a100";
   try {
+    const capabilities = await serverConfig() as { transcribers?: Record<string,boolean> } | null;
+    if (backend !== "browser" && !capabilities?.transcribers?.[backend]) throw new Error("選んだMuScriptorは現在利用できません。設定で採譜先を確認してください");
     setStatus("1/3 意図を解釈しています");
     let specs: LyriaSpec[];
     try {
@@ -348,38 +349,46 @@ askBtn.onclick = async () => {
     });
     const logIndex = project.log.length - 1;
     const t = project.tracks[target];
-    t.alts = [];
+    const touched = new Set<TrackId>();
+    if(backend === "browser") t.alts = [];
     roll.track = target;
     for (let k = 0; k < specs.length; k++) {
       setStatus(`3/3 案${LABELS[k]}を耳コピしています`);
-      let g: Ghost;
-      if (target === "drums") {
-        g = await makeDrumGhost(intent, specs[k], fulls[k], logIndex, k, backend);
-      } else {
-        // 非リアルタイムのモデルは1分ほどの曲を返すので、耳コピは先頭の約35秒だけにする（時間を抑えるため）
-        const src = model === "realtime" ? fulls[k] : slice(engine.context, fulls[k], 0, Math.min(fulls[k].duration, 35));
-        const raw = backend === "browser"
-          ? await transcribe(src, (p) => setStatus(`3/3 耳コピしています ${Math.round(p * 100)}%`))
-          : (await transcribeWithMuscriptor(await toMono22k(src), 22050, muscriptorInstruments(target, specs[k].prompts), backend))
-            .map((n) => ({ startTimeSeconds: n.start, durationSeconds: n.end - n.start, pitchMidi: n.pitch, amplitude: 0.8, instrument: n.instrument }));
-        g = makeGhost(target, intent, specs[k], fulls[k], raw, logIndex, k, undefined, model !== "realtime");
-        g.model = model;
+      if(backend !== "browser") {
+        const src = slice(engine.context,fulls[k],0,Math.min(fulls[k].duration,seconds+barSec));
+        const hits = await transcribeWithMuscriptor(await toMono22k(src),22050,[],backend,(text)=>setStatus(`3/3 ${text}`));
+        if(!hits.length)throw new Error("MuScriptorの採譜結果は0音でした。生成音を確認して再試行してください");
+        const raw = hits.map((n)=>({startTimeSeconds:n.start,durationSeconds:n.end-n.start,pitchMidi:n.pitch,amplitude:.8,instrument:n.instrument}));
+        const clock = cleanToGhost(raw,{bpm:project.bpm,root:project.root,role:target==="bass"?"bass":"lead",bars:project.bars,conform:model!=="realtime"});
+        const parts=notesToParts(hits,{bpm:clock.sourceBpm,bars:project.bars,startSec:clock.startSec,transpose:clock.transpose??0});
+        if(!parts.length)throw new Error("ループ区間に音符を拾えませんでした");
+        for(const part of parts){
+          const id:TrackId=`part:${part.instrument}`;
+          if(!project.tracks[id])project.tracks[id]={id,name:part.name,role:part.role,instrument:part.instrument,preset:`sf:${part.program}`,notes:[],mute:false,ghost:null};
+          const track=project.tracks[id];
+          if(!touched.has(id)){track.alts=[];track.ghost=null}
+          touched.add(id);
+          const g:Ghost={notes:part.notes,conf:part.notes.map(()=>.5),polyphonic:true,full:fulls[k],startSec:clock.startSec,sourceBpm:clock.sourceBpm,transpose:clock.transpose,raw:raw.filter((n)=>n.instrument===part.instrument),ampRatio:0,spec:specs[k],intent,explanation:"",logIndex,label:LABELS[k],proposed:part.notes.length,accepted:0,model:`MuScriptor`};
+          track.alts!.push(g);if(!track.ghost)track.ghost=g;
+        }
+        if(k===0){const primary=parts.find((p)=>p.role===target)??parts.find((p)=>p.role!=="drums")??parts[0];showAlt(`part:${primary.instrument}`,0)}else commit();
+      }else{
+        let g:Ghost;
+        if(target==="drums")g=await makeDrumGhost(intent,specs[k],fulls[k],logIndex,k,backend);
+        else{const src=model==="realtime"?fulls[k]:slice(engine.context,fulls[k],0,Math.min(fulls[k].duration,seconds+barSec));const raw=await transcribe(src,(p)=>setStatus(`3/3 耳コピしています ${Math.round(p*100)}%`));g=makeGhost(target,intent,specs[k],fulls[k],raw,logIndex,k,undefined,model!=="realtime");g.model=model}
+        t.alts!.push(g);touched.add(target);if(k===0)showAlt(target,0);else commit();
       }
-      t.alts.push(g);
-      // 最初の案ができた時点で見せる（2案目の耳コピを待たせない）
-      if (k === 0) { showAlt(target, 0); }
-      else commit();
-
     }
-    if (!t.alts.some((g) => g.notes.length)) throw new Error("音を拾えませんでした。もう一度試すか、意図の書き方を変えてください");
-    project.log[logIndex].proposed = Math.max(...t.alts.map((g) => g.proposed));
+    if(![...touched].some((id)=>project.tracks[id].alts?.some((g)=>g.notes.length)))throw new Error("音を拾えませんでした。生成音を確認してください");
+    project.log[logIndex].proposed=[...touched].reduce((sum,id)=>sum+Math.max(...(project.tracks[id].alts??[]).map((g)=>g.proposed)),0);
     commit();
-    setStatus(`${t.alts.length}案が届きました`);
+    setStatus(`${specs.length}案が届きました${backend!=="browser"?`（${touched.size}パート）`:""}`);
   } catch (e) {
     console.error(e);
     setStatus(String((e as Error).message ?? e), true);
   } finally {
     askBtn.disabled = false;
+    renderGhostPanel();
   }
 };
 
@@ -535,6 +544,7 @@ function showAlt(id: TrackId, k: number) {
   const g = t.alts?.[k];
   if (!g) return;
   t.ghost = g;
+  roll.track = id;
   applyLyriaSlice(g);
   commit();
 }
@@ -574,14 +584,15 @@ function reclean(ampRatio: number) {
   const id = roll.track;
   const g = project.tracks[id].ghost;
   if (!g) return;
-  if (id === "drums") {
+  if (trackRole(project,id) === "drums") {
     // ドラムでは「拾う音の量」を検出の感度として使う（右ほど小さな音まで拾う）
     redetectDrums(g, Math.max(0.05, Math.min(0.95, 1 - ampRatio)));
     commit();
     return;
   }
+  if (g.polyphonic) return;
   g.ampRatio = ampRatio;
-  const res = cleanToGhost(g.raw, { bpm: project.bpm, root: project.root, role: id, bars: project.bars, startSec: g.startSec, sourceBpm: g.sourceBpm, transpose: g.transpose ?? 0, ampRatio });
+  const res = cleanToGhost(g.raw, { bpm: project.bpm, root: project.root, role: trackRole(project,id) as "lead" | "bass", bars: project.bars, startSec: g.startSec, sourceBpm: g.sourceBpm, transpose: g.transpose ?? 0, ampRatio });
   g.notes = res.notes;
   g.conf = confidence(g.notes, project.bars * 16);
   commit();
@@ -729,6 +740,7 @@ function renderGhostPanel() {
     const tp = g.transpose ?? 0;
     $("spec").insertAdjacentHTML("beforeend", `<div class="params">演奏 ${g.sourceBpm.toFixed(1)} BPM・${esc(g.detectedKey ?? "キー不明")}${tp ? `・${tp > 0 ? "+" : ""}${tp} 半音移調` : ""}</div>`);
   }
+  sens.closest<HTMLElement>("label")!.hidden = !!g.polyphonic;
   sens.value = String(Math.round((t.id === "drums" ? g.ampRatio : 1 - g.ampRatio) * 100));
   const sure = g.conf.filter((c) => c > 0.6).length;
   $("ghostSummary").textContent = `${g.notes.length}音・確からしい音 ${sure}・採用 ${g.accepted}`;
@@ -797,7 +809,7 @@ function renderAll() {
   const t = project.tracks[roll.track];
   $("rollTitle").textContent = t.name;
   $("rollMeta").textContent = `${t.notes.length}音${t.ghost ? `・提案 ${t.ghost.notes.length}音（案${t.ghost.label}）` : ""}・${project.bars}小節・${project.bpm} BPM`;
-  document.querySelector<HTMLElement>(".lg-note")!.style.background = `var(--track-${t.id})`;
+  document.querySelector<HTMLElement>(".lg-note")!.style.background = `var(--track-${trackRole(project,t.id)})`;
   roll.draw();
   vel.draw();
 }
@@ -815,7 +827,7 @@ let historyIndex = -1;
 function snapshot(): string {
   return JSON.stringify({
     bpm: project.bpm, root: project.root, bars: project.bars,
-    tracks: Object.fromEntries(Object.values(project.tracks).map((t) => [t.id, { notes: t.notes, mute: t.mute, solo: t.solo, volume: t.volume, preset: t.preset }])),
+    tracks: Object.fromEntries(Object.values(project.tracks).map((t) => [t.id, { id:t.id, name:t.name, role:t.role, instrument:t.instrument, notes: t.notes, mute: t.mute, solo: t.solo, volume: t.volume, preset: t.preset }])),
   });
 }
 function recordHistory() {
@@ -830,7 +842,9 @@ function recordHistory() {
 function restore(s: string) {
   const o = JSON.parse(s);
   project.bpm = o.bpm; project.root = o.root; project.bars = o.bars;
-  for (const [id, t] of Object.entries(o.tracks) as [TrackId, Partial<typeof project.tracks.lead>][]) Object.assign(project.tracks[id], t);
+  for(const id of Object.keys(project.tracks) as TrackId[]) if(!o.tracks[id]) delete project.tracks[id];
+  for (const [id, t] of Object.entries(o.tracks) as [TrackId, typeof project.tracks.lead][]) project.tracks[id]={...(project.tracks[id]??{ghost:null}),...t};
+  if(!project.tracks[roll.track])roll.track="lead";
   bpmInput.value = String(project.bpm);
   keySel.value = project.root;
   barsSel.value = String(project.bars);
