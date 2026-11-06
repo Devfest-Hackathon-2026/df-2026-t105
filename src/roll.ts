@@ -73,7 +73,7 @@ export class Roll {
   private geom() {
     const r = this.canvas.getBoundingClientRect();
     const rows = this.rows();
-    const steps = Math.min(this.viewBars,this.get().bars-this.startBar) * 16;
+    const steps = this.viewBars * 16;
     const cw = (r.width - this.labelW) / steps;
     const rh = (r.height - RULER_H) / rows.length;
     return { r, rows, steps, cw, rh };
@@ -133,7 +133,7 @@ export class Roll {
     }
     if (p.kind !== "note") {
       const h = this.hit(e);
-      if (h && e.button === 0) this.onEdit("add", this.track, { step: h.step, len: Math.min(this.snap||.25,this.get().bars*16-h.step), pitch: h.pitch, vel: 0.8 });
+      if (h && e.button === 0) this.onEdit("add", this.track, { step: h.step, len: this.snap||.25, pitch: h.pitch, vel: 0.8 });
       return;
     }
     // 自分のノート。4px 以上動いたらドラッグ、動かずに離したらクリック（削除）と後で判別する
@@ -180,12 +180,12 @@ export class Roll {
     const d = this.drag;
     if (d.mode === "move") {
       const delta=this.snap?Math.round(dx/cw/this.snap)*this.snap:dx/cw;
-      const step = Math.max(0, Math.min(this.get().bars*16 - Math.max(this.snap,1/960), d.origStep + delta));
+      const step = Math.max(0,d.origStep+delta);
       const row = Math.max(0, Math.min(rows.length - 1, d.origRow + Math.round(dy / rh)));
       d.next = { ...d.note, step, pitch: rows[row].pitch };
     } else {
       const delta=this.snap?Math.round(dx/cw/this.snap)*this.snap:dx/cw;
-      const len = Math.max(this.snap||1/960, Math.min(this.get().bars*16 - d.origStep, d.origLen + delta));
+      const len = Math.max(this.snap||1/960,d.origLen+delta);
       d.next = { ...d.note, len };
     }
   }

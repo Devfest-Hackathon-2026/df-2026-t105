@@ -28,7 +28,10 @@ try{
  for(const text of ['Kick','Snare','Open Hi-hat','Low Tom','Crash 1','Ride 1','Open Triangle'])assert(labels.includes(text),text);
  assert(!labels.some(t=>/^C\d/.test(t)),'drums have instrument names, not piano keys');
  assert(await page.locator('.roll-wrap').evaluate(e=>e.scrollHeight>e.clientHeight),'all 47 named drum rows scroll vertically');
- await page.fill('#bars','10000');await page.locator('#bars').press('Tab');assert.equal((await stored()).bars,10000);
+ assert.equal(await page.locator('#bars,#extendBars,[data-bars]').count(),0,'no song-length controls');
+ assert.equal(await page.getAttribute('#loop','aria-pressed'),'false');
+ await page.click('#play');await page.waitForFunction(()=>Number(document.querySelector('#position').textContent.split('.')[0])>=2,{timeout:10000});await page.click('#play');
+ const beforeNavigation=JSON.stringify(await stored());await page.click('#viewNext');assert.equal(await page.inputValue('#viewStart'),'5');assert.equal(JSON.stringify(await stored()),beforeNavigation,'navigation does not extend or dirty the song');
  await page.fill('#viewStart','9001');await page.locator('#viewStart').press('Tab');await page.selectOption('#viewBars','1');await page.selectOption('#grid','0.25');
  const r=await page.locator('#roll').boundingBox(),cw=(r.width-112)/16,rowHeight=(r.height-22)/47,y=r.y+22+3.5*rowHeight;
  const x=step=>r.x+112+step*cw;
@@ -43,12 +46,12 @@ try{
  assert.equal(await page.inputValue('#viewStart'),'33');assert.equal(await page.locator('.take-bar').count(),1,'takes render only visible bars on a long project');
  await page.selectOption('#viewBars','4');assert.equal(await page.locator('.take-bar').count(),4);
  await page.click('#acceptAll');let p=await stored();notes=p.tracks['part:drums'].notes;
- assert.equal(p.bars,10000);for(const h of hits)assert(notes.some(n=>n.pitch===h.pitch&&Math.abs(n.step-(512+(h.start-.5)/.125))<1e-7),'fine generated drum onset retained at chosen bar');
+ assert.equal(p.bars,9001);for(const h of hits)assert(notes.some(n=>n.pitch===h.pitch&&Math.abs(n.step-(512+(h.start-.5)/.125))<1e-7),'fine generated drum onset retained at chosen bar');
  assert(notes.some(n=>n.step===2.5),'existing early notes preserved');assert(notes.some(n=>n.step===144000.75),'existing late notes preserved');
  await page.keyboard.press('Control+z');assert(!(await stored()).tracks['part:drums'].notes.some(n=>n.step===512),'one undo reverses all adoption');await page.keyboard.press('Control+Shift+z');assert((await stored()).tracks['part:drums'].notes.some(n=>n.step===512));
  await page.click('#playView');await page.waitForFunction(()=>document.querySelector('#position').textContent.startsWith('33.'),{timeout:60000});await page.click('#play');
  await page.screenshot({path:'out/smoke-timeline/drums-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:900});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:'out/smoke-timeline/drums-mobile.png',fullPage:true});
- await page.reload();p=await stored();assert.equal(p.bars,10000);assert(p.tracks['part:drums'].notes.some(n=>n.step===144000.75));assert.deepEqual(errors,[]);
- console.log('PASS named 47-piece drums, scrolling, 10000 bars, fractional/triplet/free input and dragging, precise transcription into bars 33-36, region playback, persistence and mobile layout');
+ await page.reload();p=await stored();assert.equal(p.bars,9001);assert(p.tracks['part:drums'].notes.some(n=>n.step===144000.75));assert.deepEqual(errors,[]);
+ console.log('PASS named 47-piece drums, scrolling, unbounded navigation and automatic song extent, fractional/triplet/free input and dragging, precise transcription into bars 33-36, region playback, persistence and mobile layout');
 }finally{await browser.close()}

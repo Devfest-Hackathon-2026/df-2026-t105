@@ -83,6 +83,19 @@ export type Project = {
   log: LogEntry[];
 };
 
+/** Content extent for playback/export; the editor itself has no end boundary. */
+export function contentBars(p:Project):number {
+  let end=0;
+  for(const track of Object.values(p.tracks)) {
+    for(const n of track.notes)end=Math.max(end,n.step+n.len);
+    for(const g of track.alts??(track.ghost?[track.ghost]:[])){
+      if(g.bars)end=Math.max(end,(g.startStep??0)+g.bars*16);
+      for(const n of g.notes)end=Math.max(end,n.step+n.len);
+    }
+  }
+  return Math.max(1,Math.ceil(end/16));
+}
+
 export const STEPS_PER_BAR = 16;
 export const DRUM_ROWS = [
   [35,"Acoustic Kick"],[36,"Kick"],[37,"Side Stick"],[38,"Snare"],[39,"Clap"],[40,"Electric Snare"],

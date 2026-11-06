@@ -40,11 +40,7 @@
           <label class="t-field"><span>BPM</span><input id="bpm" type="number" min="60" max="200" inputmode="numeric" /></label>
           <label class="t-field"><span>キー</span><select id="key"></select></label>
         </div>
-        <div class="seg" role="group" aria-label="ループの長さ">
-          <button data-bars="4">4小節</button>
-          <button data-bars="8">8小節</button>
-        </div>
-        <label class="t-field"><span>曲の小節数</span><input id="bars" type="number" min="1" step="1" inputmode="numeric" /></label><button id="extendBars" class="text-btn">＋8小節</button>
+        <button id="loop" class="text-btn" aria-pressed="false" title="曲の内容がある範囲を繰り返す">ループ</button>
 
         <div class="seg" role="group" aria-label="聴くもの">
           <button data-mode="A" title="自分のノートだけを鳴らす">自分</button>
@@ -90,7 +86,7 @@
           </div>
           <div class="edit-tools" aria-label="編集範囲とグリッド">
             <button id="viewPrev" class="text-btn" aria-label="前の小節へ">前へ</button>
-            <button id="playView" class="text-btn">表示範囲を再生</button>
+            <button id="playView" class="text-btn">表示範囲をループ</button>
             <label>表示開始<input id="viewStart" type="number" min="1" value="1" /></label>
             <button id="viewNext" class="text-btn" aria-label="次の小節へ">次へ</button>
             <label>表示幅<select id="viewBars"><option value="1">1小節</option><option value="2">2小節</option><option value="4" selected>4小節</option><option value="8">8小節</option><option value="16">16小節</option></select></label>

@@ -13,3 +13,10 @@ test('loading removes exact demo backing while preserving edited and detected tr
  globalThis.localStorage={getItem:()=>JSON.stringify(p)};
  try{const loaded=state.load();assert(!loaded.tracks.drums);assert.deepEqual(loaded.tracks.bass.notes,p.tracks.bass.notes);assert(loaded.tracks['part:drums']);}finally{delete globalThis.localStorage}
 });
+test('content extent follows notes and proposed regions, independently of the viewport or old song boundary',()=>{
+ const p=state.demoProject();p.bars=8;assert.equal(state.contentBars(p),1);
+ const n={step:1600.25,len:.5,pitch:38,vel:.8};p.tracks.lead.notes.push(n);assert.equal(state.contentBars(p),101);
+ n.step=32;n.len=17;assert.equal(state.contentBars(p),4);
+ p.tracks.lead.notes=[];assert.equal(state.contentBars(p),1);
+ p.tracks.lead.ghost={startStep:512,bars:4,notes:[]};assert.equal(state.contentBars(p),36);
+});

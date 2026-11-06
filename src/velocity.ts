@@ -28,7 +28,7 @@ export class VelocityLane {
 
   private geom() {
     const r = this.canvas.getBoundingClientRect();
-    const steps = Math.min(this.viewBars,this.get().bars-this.startBar) * 16;
+    const steps = this.viewBars * 16;
     const cw = (r.width - KEY_W) / steps;
     return { r, steps, cw, pad: 6 };
   }

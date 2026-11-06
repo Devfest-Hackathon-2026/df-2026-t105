@@ -110,6 +110,7 @@ export class Engine {
   private ins: Instruments;
   private soundfont = new SoundFontPlayer();
   private presetKey = "";
+  private loopToContent = true;
   private lyria: Tone.Player | null = null;
   private shifter: Tone.PitchShift | null = null;
   private lyriaGain = new Tone.Gain(0.8).toDestination();
@@ -142,9 +143,8 @@ export class Engine {
 
   private tick(time: number) {
     const p = this.get();
-    const total = p.bars * 16;
     const ticks = Tone.getTransport().ticks;
-    const step = Math.round(ticks / (Tone.getTransport().PPQ / 4)) % total;
+    const step = Math.round(ticks / (Tone.getTransport().PPQ / 4));
     const sixteenth = Tone.Time("16n").toSeconds();
     Tone.getDraw().schedule(() => this.onStep(step), time);
     for (const t of audibleTracks(p)) {
@@ -186,14 +186,15 @@ export class Engine {
     this.lyriaGain.gain.value = this.mode === "L" ? 0.8 : 0;
   }
 
-  async start(startStep=0,endStep=this.get().bars*16) {
+  async start(startStep=0,endStep=this.get().bars*16,loop=false) {
     await Tone.start();
     await this.soundfont.ready(Object.values(this.get().tracks));
     this.soundfont.resume();
     const p = this.get();
     const tr = Tone.getTransport();
     tr.bpm.value = p.bpm;
-    tr.loop = true;
+    this.loopToContent=startStep===0&&endStep===p.bars*16;
+    tr.loop = loop;
     tr.loopStart = `${Math.round(startStep*tr.PPQ/4)}i`;
     tr.loopEnd = `${Math.round(endStep*tr.PPQ/4)}i`;
     this.applyMode();
@@ -217,9 +218,12 @@ export class Engine {
     this.trigger(this.get().tracks[id], { step: 0, len: 2, pitch, vel: 0.8 }, Tone.now() + 0.01, 60 / this.get().bpm / 4, false);
   }
   setBars(bars: number) {
-    const tr=Tone.getTransport();
-    tr.loopStart=0;tr.loopEnd=`${bars}m`;
-    if(tr.seconds>=Tone.Time(`${bars}m`).toSeconds())tr.seconds=0;
+    if(!this.loopToContent)return;
+    const tr=Tone.getTransport();tr.loopStart=0;tr.loopEnd=`${bars}m`;
+  }
+  setLoop(enabled:boolean){
+    this.loopToContent=true;
+    const tr=Tone.getTransport();tr.loopStart=0;tr.loopEnd=`${this.get().bars}m`;tr.loop=enabled;
   }
   get context() {
     return Tone.getContext().rawContext as AudioContext;

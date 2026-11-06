@@ -61,18 +61,14 @@ const p = await stored();
 const expected = (60 / p.bpm) * 4 * p.bars * 2 + 1.5;
 check(b.subarray(0, 4).toString() === "RIFF" && Math.abs(seconds - expected) < 0.05, `WAV を書き出せる（${seconds.toFixed(2)} 秒、期待 ${expected.toFixed(2)} 秒）`);
 check(rms > 0.01 && peak < 1, `書き出した音が無音でも割れてもいない（RMS ${rms.toFixed(3)}、ピーク ${peak.toFixed(2)}）`);
-// 8小節に伸ばすと、WAV も2倍の長さになる
-await page.click('[data-bars="8"]');
-check((await stored()).bars === 8, "ループを8小節にできる");
-const [dl8] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.click("#exportWav")]);
-const p8 = `${outDir}/8bars-${dl8.suggestedFilename()}`;
-await dl8.saveAs(p8);
-const b8 = readFileSync(p8);
-const sec8 = b8.readUInt32LE(40) / (b8.readUInt32LE(24) * b8.readUInt16LE(22) * 2);
-const exp8 = (60 / p.bpm) * 4 * 8 * 2 + 1.5;
-check(Math.abs(sec8 - exp8) < 0.05, `8小節の WAV の長さ（${sec8.toFixed(2)} 秒、期待 ${exp8.toFixed(2)} 秒）`);
-await page.keyboard.press("Control+z");
-check((await stored()).bars === 4, "小節数の変更も元に戻せる");
+// Move to empty space and add material; the song extent follows without a length setting.
+await page.fill('#viewStart','8');await page.locator('#viewStart').press('Tab');
+await page.click('.track-name:has-text("Lead")');
+const late=await page.locator('#roll').boundingBox();
+await page.mouse.click(late.x+112+5,late.y+22+6);
+check((await stored()).bars===8,"空の8小節目へ音符を置くと曲が伸びる");
+await page.keyboard.press('Control+z');
+check((await stored()).bars===p.bars,"元に戻すと内容に合わせて曲の長さも戻る");
 await page.screenshot({ path: `${outDir}/daw.png` });
 check(errors.length === 0, `ページのエラーなし${errors.length ? `: ${errors.join(" / ")}` : ""}`);
 await browser.close();
