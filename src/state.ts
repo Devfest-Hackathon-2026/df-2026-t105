@@ -151,3 +151,42 @@ export function describeTrack(p: Project, id: TrackId): string {
   }
   return `${t.name}: ` + n.map((x) => `${x.step}:${names[x.pitch % 12]}${Math.floor(x.pitch / 12) - 1}x${x.len}`).join(" ");
 }
+
+/** Lyria のプロンプトに入れる、既存トラックの内容の説明（英語）。target 以外のトラックだけを述べる */
+export function describeForLyria(p: Project, target: TrackId): string {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const nm = (pitch: number) => `${names[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
+  const beat = (step: number) => { const b = (step % 16) / 4 + 1; return Number.isInteger(b) ? String(b) : String(parseFloat(b.toFixed(2))); };
+  const dur = (len: number) => { const b = len / 4; return Number.isInteger(b) ? String(b) : String(parseFloat(b.toFixed(2))); };
+  const DR: Record<number, string> = { 35: "kick", 36: "kick", 38: "snare", 40: "snare", 42: "closed hat", 44: "pedal hat", 46: "open hat", 49: "crash", 51: "ride" };
+  const parts: string[] = [];
+  for (const id of ["drums", "bass", "lead"] as TrackId[]) {
+    if (id === target) continue;
+    const notes = [...p.tracks[id].notes].sort((a, b) => a.step - b.step);
+    if (!notes.length) continue;
+    const bodies: { bar: number; body: string }[] = [];
+    for (let b = 0; b < p.bars; b++) {
+      const bar = notes.filter((n) => Math.floor(n.step / 16) === b);
+      if (!bar.length) continue;
+      if (id === "drums") {
+        const groups = new Map<number, number[]>();
+        for (const n of bar) (groups.get(n.pitch) ?? groups.set(n.pitch, []).get(n.pitch)!).push(Number(beat(n.step)));
+        bodies.push({ bar: b + 1, body: [...groups].map(([p2, bs]) => `${DR[p2] ?? `drum${p2}`}@${bs.join(",")}`).join(" ") });
+      } else {
+        bodies.push({ bar: b + 1, body: bar.map((n) => `${nm(n.pitch)}(${dur(n.len)}b)`).join(" ") });
+      }
+    }
+    // 同じ小節が続くときはまとめる（ループ曲は同じパターンの繰り返しが多い）
+    const bars: string[] = [];
+    for (let i = 0; i < bodies.length;) {
+      let j = i;
+      while (j + 1 < bodies.length && bodies[j + 1].body === bodies[i].body && bodies[j + 1].bar === bodies[j].bar + 1) j++;
+      bars.push(j === i ? `bar${bodies[i].bar} ${bodies[i].body}` : `bars${bodies[i].bar}-${bodies[j].bar} ${bodies[i].body}`);
+      i = j + 1;
+    }
+    parts.push(`${id === "drums" ? "drums" : `${id} melody`}: ${bars.join("; ")}`);
+  }
+  if (!parts.length) return "";
+  const unit = target === "drums" ? "hit positions are beat numbers" : "note length is in beats";
+  return `The new part plays together with this existing loop (${unit}): ${parts.join("; ")}. Make it fit around them.`;
+}

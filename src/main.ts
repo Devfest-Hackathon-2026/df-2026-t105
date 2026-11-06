@@ -7,7 +7,7 @@ import { explainGhost, intentToSpecs } from "./gemini";
 import { buildClipPrompt, generate, generateClip, serverConfig, slice, type ClipModel } from "./lyria";
 import { KEY_W, Roll } from "./roll";
 import { VelocityLane } from "./velocity";
-import { demoProject, load, save, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
+import { demoProject, describeForLyria, load, save, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
 import { toMono22k, transcribe, warmUp } from "./transcribe";
 import { estimateStartSec, transcribeDrums } from "./core/drums.js";
 import { drumsToGhost, transcribeWithMuscriptor } from "./muscriptor";
@@ -292,6 +292,8 @@ askBtn.onclick = async () => {
     }
     const barSec = (60 / project.bpm) * 4;
     const seconds = 2 + barSec * (project.bars + 1);
+    // Lyria は既存トラックの音声を聴けないので、音符の内容を英語の説明にしてプロンプトに添える
+    const context = describeForLyria(project, target);
     // ドラムの検出は曲のテンポで格子に合わせる前提なので、テンポを守る RealTime を使う
     const model = target === "drums" ? "realtime" : modelSel.value;
     if (model === "realtime" && modelSel.querySelector<HTMLOptionElement>('option[value="realtime"]')!.disabled) {
@@ -305,7 +307,7 @@ askBtn.onclick = async () => {
       // 2案を同時に生成する。生成中の試聴は案Aだけ鳴らす
       fulls = await Promise.all(specs.map((spec, k) =>
         generate(apiKey, {
-          role: target, spec, bpm: project.bpm, root: project.root, seconds,
+          role: target, spec, bpm: project.bpm, root: project.root, seconds, context,
           ctx: engine.context, monitor: monitorChk.checked && k === 0,
           onProgress: (sec) => { prog[k] = sec; showProg(); },
         }),
@@ -316,7 +318,7 @@ askBtn.onclick = async () => {
       const keyName = projectKeyName();
       const clipSec = Math.ceil(seconds + barSec * 2);
       const res = await Promise.all(specs.map((spec) =>
-        generateClip(apiKey, { model: model as ClipModel, ctx: engine.context, prompt: buildClipPrompt(spec, { bpm: project.bpm, keyName, role: target, seconds: clipSec }) }),
+        generateClip(apiKey, { model: model as ClipModel, ctx: engine.context, prompt: buildClipPrompt(spec, { bpm: project.bpm, keyName, role: target, seconds: clipSec, context }) }),
       ));
       fulls = res.map((r) => r.buffer);
       console.info("作曲に使ったモデル:", res.map((r) => r.model));

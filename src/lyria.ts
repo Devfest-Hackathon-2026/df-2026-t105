@@ -16,6 +16,8 @@ export type LyriaRun = {
   ctx: AudioContext;
   /** ストリームをそのまま鳴らす */
   monitor: boolean;
+  /** 既存トラックの内容を伝える英語の説明。weighted prompt として追加する */
+  context?: string;
   onProgress: (sec: number) => void;
 };
 
@@ -81,7 +83,9 @@ export async function generate(apiKey: string, run: LyriaRun): Promise<AudioBuff
       : run.role === "bass"
         ? { muteDrums: true }
         : { muteDrums: true, muteBass: true };
-  await session.setWeightedPrompts({ weightedPrompts: run.spec.prompts });
+  await session.setWeightedPrompts({
+    weightedPrompts: run.context ? [...run.spec.prompts, { text: run.context, weight: 0.6 }] : run.spec.prompts,
+  });
   await session.setMusicGenerationConfig({
     musicGenerationConfig: {
       bpm: run.bpm,
@@ -133,11 +137,12 @@ export function slice(ctx: BaseAudioContext, buf: AudioBuffer, startSec: number,
 
 export type ClipModel = "lyria-3.5" | "lyria-3-clip-preview";
 
-export function buildClipPrompt(spec: LyriaSpec, o: { bpm: number; keyName: string; role: "lead" | "bass" | "drums"; seconds: number }): string {
+export function buildClipPrompt(spec: LyriaSpec, o: { bpm: number; keyName: string; role: "lead" | "bass" | "drums"; seconds: number; context?: string }): string {
   const body = spec.prompts.map((p) => p.text).join(", ");
   const parts = o.role === "drums" ? "drum kit only, no melody, no bass" : "no drums, no chords, no other instruments";
   const key = o.role === "drums" ? "" : `, key of ${o.keyName}`;
-  return `[0:00 - 0:${String(o.seconds).padStart(2, "0")}] A short loop: ${body}. ${parts}. Strict steady tempo of ${o.bpm} BPM in 4/4${key}. Instrumental only, no vocals, no singing. The track ends at 0:${String(o.seconds).padStart(2, "0")}.`;
+  const ctx = o.context ? ` ${o.context}` : "";
+  return `[0:00 - 0:${String(o.seconds).padStart(2, "0")}] A short loop: ${body}.${ctx} ${parts}. Strict steady tempo of ${o.bpm} BPM in 4/4${key}. Instrumental only, no vocals, no singing. The track ends at 0:${String(o.seconds).padStart(2, "0")}.`;
 }
 
 /** generateContent で生成し、音声を AudioBuffer にして返す。音声が返らないことがあるので3回まで試す */
