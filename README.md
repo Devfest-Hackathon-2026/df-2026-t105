@@ -20,6 +20,7 @@ npm run dev               # 画面（http://127.0.0.1:5173）。/api と /ws は
 - `GEMINI_API_KEY`：AI Studio。Lyria 3.5、3 Clip、RealTime が使える
 - `VERTEX_PROJECT`（と必要なら `VERTEX_LOCATION`、`VERTEX_GEMINI_MODEL`）：Vertex AI（Agent Platform）。ハッカソンの GCP クレジットはこちらに使える。Lyria は 3 Pro と 3 Clip で、3.5 の選択肢は 3 Pro になる。認証は Cloud Run ではサービスアカウント、手元では `gcloud auth print-access-token`
 - 両方を設定すると、作曲と Gemini は Vertex、RealTime は AI Studio を使う
+- `MUSCRIPTOR_URL`：muscriptor のサーバー（例 `http://127.0.0.1:8222`）。設定すると、ドラムの耳コピに muscriptor を使う。サーバーは `~/src/muscriptor` で `uv run muscriptor serve --model small --device cpu --port 8222` で起動する（HuggingFace でライセンスに同意し、`hf auth login` 済みであること）
 
 - `?demo` を付けて開くと、事前に生成した2案をすぐ出すボタンが出る（実演で生成が遅れたとき用。`npm run make-demo` で作り直せる）。
 - `npm run build` のあと `npm start` で、本番と同じ構成（中継サーバーが画面も配信する）で動く。
