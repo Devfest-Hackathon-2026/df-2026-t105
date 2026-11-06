@@ -13,6 +13,9 @@ try{
  const modelLabels=await page.locator('#variants').innerText();
  for(const name of ['MuScriptor large','MuScriptor medium','MuScriptor small'])assert(modelLabels.includes(name),`missing model comparison ${name}`);
  assert.equal(await page.locator('#conditions').getAttribute('open'),null);
+ await page.getByRole('button',{name:'MuScriptor small（0音）',exact:true}).click();
+ assert((await page.textContent('#audioStatus')).includes('0音'));
+ await page.getByRole('button',{name:'原音',exact:true}).click();
  await page.click('#play');await page.waitForTimeout(700);assert.equal(await page.getAttribute('#play','aria-pressed'),'true');
  await page.locator('#variants button').nth(1).click();assert.equal(await page.getAttribute('#play','aria-pressed'),'true');
  assert(Number(await page.inputValue('#seek'))>.4,'switch keeps current position');
