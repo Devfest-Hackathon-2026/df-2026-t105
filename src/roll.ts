@@ -8,6 +8,8 @@ const CLICK_RADIUS = 4;
 export const KEY_W = 112;
 export const RULER_H = 22;
 
+const roundStep = (s: number) => Math.round(s * 960) / 960;
+
 /** ピアノロール。本物のノートは塗り、ゴーストは確信度に応じた濃さの枠で描く */
 export class Roll {
   private ctx: CanvasRenderingContext2D;
@@ -15,7 +17,7 @@ export class Roll {
   playStep = -1;
   startBar = 0;
   viewBars = 4;
-  snap = .25;
+  snap = 1;
   private hover: { step: number; pitch: number } | null = null;
   private labelW = KEY_W;
   /** 鍵盤をクリックしたときに音を鳴らす */
@@ -83,9 +85,10 @@ export class Roll {
     const { r, rows, steps, cw, rh } = this.geom();
     const x = e.clientX - r.left - this.labelW, y = e.clientY - r.top - RULER_H;
     if (x < 0) return null;
-    const step = Math.floor(x / cw / (this.snap||1/960))*(this.snap||1/960), row = Math.floor(y / rh);
+    const grid = this.snap || 1 / 960;
+    const step = roundStep(Math.floor(x / cw / grid) * grid), row = Math.floor(y / rh);
     if (step < 0 || step >= steps || row < 0 || row >= rows.length) return null;
-    return { step:step+this.startBar*16, pitch: rows[row].pitch };
+    return { step: roundStep(step + this.startBar * 16), pitch: rows[row].pitch };
   }
 
   /** ポインターの下にあるものを調べる。自分のノートのときは右端（長さ変更のつかみ位置）かどうかも返す */
@@ -134,7 +137,7 @@ export class Roll {
     }
     if (p.kind !== "note") {
       const h = this.hit(e);
-      if (h && e.button === 0) this.onEdit("add", this.track, { step: h.step, len: this.snap||.25, pitch: h.pitch, vel: 0.8 });
+      if (h && e.button === 0) this.onEdit("add", this.track, { step: h.step, len: roundStep(this.snap || 0.25), pitch: h.pitch, vel: 0.8 });
       return;
     }
     // 自分のノート。4px 以上動いたらドラッグ、動かずに離したらクリック（削除）と後で判別する
@@ -180,13 +183,13 @@ export class Roll {
     const { rows, cw, rh } = this.geom();
     const d = this.drag;
     if (d.mode === "move") {
-      const delta=this.snap?Math.round(dx/cw/this.snap)*this.snap:dx/cw;
-      const step = Math.max(0,d.origStep+delta);
+      const rawStep = d.origStep + dx / cw;
+      const step = Math.max(0, roundStep(this.snap ? Math.round(rawStep / this.snap) * this.snap : rawStep));
       const row = Math.max(0, Math.min(rows.length - 1, d.origRow + Math.round(dy / rh)));
       d.next = { ...d.note, step, pitch: rows[row].pitch };
     } else {
-      const delta=this.snap?Math.round(dx/cw/this.snap)*this.snap:dx/cw;
-      const len = Math.max(this.snap||1/960,d.origLen+delta);
+      const rawLen = d.origLen + dx / cw;
+      const len = Math.max(roundStep(this.snap || 1 / 960), roundStep(this.snap ? Math.round(rawLen / this.snap) * this.snap : rawLen));
       d.next = { ...d.note, len };
     }
   }
@@ -253,9 +256,14 @@ export class Roll {
       c.fillStyle = row.black ? v("--roll-black") : v("--roll-white");
       c.fillRect(L, T + i * rh, r.width - L, rh);
     });
-    // 縦の格子: 16分、拍、小節
-    for (let s = 0; s <= steps+.0001; s+=this.snap||.25) {
-      const bar = Math.abs(s/16-Math.round(s/16))<.00001, beat = Math.abs(s/4-Math.round(s/4))<.00001;
+    // 縦の格子: 小節、拍、16分（またはシャッフル三連）
+    let drawGrid = this.snap || 1;
+    while (drawGrid * cw < 5 && drawGrid < 4) drawGrid *= 2;
+    const nLines = Math.round(steps / drawGrid);
+    for (let i = 0; i <= nLines; i++) {
+      const s = roundStep(i * drawGrid);
+      const bar = Math.abs(s / 16 - Math.round(s / 16)) < 0.0001;
+      const beat = Math.abs(s / 4 - Math.round(s / 4)) < 0.0001;
       c.fillStyle = bar ? v("--grid-bar") : beat ? v("--grid-beat") : v("--grid");
       c.fillRect(Math.round(L + s * cw) - (bar ? 1 : 0), T, bar ? 1.5 : 1, r.height - T);
     }
@@ -314,9 +322,10 @@ export class Roll {
     });
     if (this.hover && !this.drag) {
       const yy = y(this.hover.pitch);
+      const hoverW = Math.max(drums ? 8 : 4, (this.snap || 1) * cw - 1);
       c.strokeStyle = v("--muted");
       c.lineWidth = 1;
-      c.strokeRect(L + (this.hover.step-this.startBar*16) * cw + 0.5, yy + 0.5, cw - 1, rh - 1);
+      c.strokeRect(L + (this.hover.step - this.startBar * 16) * cw + 0.5, yy + 0.5, hoverW, rh - 1);
     }
 
     // Left labels mask notes extending from earlier bars.

@@ -209,6 +209,7 @@ export class SoundFontPlayer {
   private moduleReady?: Promise<void>;
   private version = 0;
   private extraChannels = new Map<string,number>();
+  private channelState = new Map<number,{isDrums:boolean;program:number;vol:number}>();
   private nextChannel = 4;
   private channelFor(track:Track,ghost=false) {
     if(!track.id.startsWith("part:")&&!track.id.startsWith("track:"))return channel(track.id,ghost);
@@ -224,7 +225,17 @@ export class SoundFontPlayer {
     if(this.loading)await this.loading;
     const needed=Math.floor(Math.max(10,...this.extraChannels.values())/16)+1;
     if(this.synths.length>=needed){
-      for(const t of tracks)for(const ghost of [false,true]){const index=this.channelFor(t,ghost);this.synths[Math.floor(index/16)].midiChannels[index%16].setDrums((t.role??t.id)==="drums")}
+      for(const t of tracks)for(const ghost of [false,true]){
+        const index=this.channelFor(t,ghost),synth=this.synths[Math.floor(index/16)],ch=index%16;
+        const isDrums=(t.role??t.id)==="drums"||!!t.preset?.startsWith("drum:");
+        const program=programFor(isDrums?"drums":(t.role??t.id),t.preset);
+        const vol=Math.min(127,Math.round(90*10**((t.volume??0)/20)));
+        const prev=this.channelState.get(index);
+        if(!prev||prev.isDrums!==isDrums)synth.midiChannels[ch].setDrums(isDrums);
+        if(!prev||prev.program!==program||prev.isDrums!==isDrums)synth.programChange(ch,program);
+        if(!prev||prev.vol!==vol)synth.controllerChange(ch,7,vol);
+        this.channelState.set(index,{isDrums,program,vol});
+      }
       return;
     }
     this.loading=this.prepare(needed,tracks).finally(()=>{this.loading=undefined});
@@ -247,20 +258,30 @@ export class SoundFontPlayer {
       } catch(e){synth.destroy();throw e}
     }
     for(const t of tracks)for(const ghost of [false,true]) {
-      const index=this.channelFor(t,ghost),synth=this.synths[Math.floor(index/16)];
-      synth.midiChannels[index%16].setDrums((t.role??t.id)==="drums");
+      const index=this.channelFor(t,ghost),synth=this.synths[Math.floor(index/16)],ch=index%16;
+      const isDrums=(t.role??t.id)==="drums"||!!t.preset?.startsWith("drum:");
+      const program=programFor(isDrums?"drums":(t.role??t.id),t.preset);
+      const vol=Math.min(127,Math.round(90*10**((t.volume??0)/20)));
+      synth.midiChannels[ch].setDrums(isDrums);
+      synth.programChange(ch,program);
+      synth.controllerChange(ch,7,vol);
+      this.channelState.set(index,{isDrums,program,vol});
     }
   }
   play(track:Track,n:Note,time:number,duration:number,ghost=false) {
-    const isDrums=(track.role??track.id)==="drums"||track.preset?.startsWith("drum:");
+    const isDrums=(track.role??track.id)==="drums"||!!track.preset?.startsWith("drum:");
     const program=programFor(isDrums?"drums":(track.role??track.id),track.preset);
+    const vol=Math.min(127,Math.round(90*10**((track.volume??0)/20)));
     const index=this.channelFor(track,ghost),synth=this.synths[Math.floor(index/16)],ch=index%16;
     if(!synth)return true;
-    synth.midiChannels[ch].setDrums(!!isDrums);
-    synth.programChange(ch,program,{time});
-    synth.controllerChange(ch,7,Math.min(127,Math.round(90*10**((track.volume??0)/20))),{time});
+    const prev=this.channelState.get(index);
+    if(!prev||prev.isDrums!==isDrums)synth.midiChannels[ch].setDrums(isDrums);
+    if(!prev||prev.program!==program||prev.isDrums!==isDrums)synth.programChange(ch,program,{time});
+    if(!prev||prev.vol!==vol)synth.controllerChange(ch,7,vol,{time});
+    this.channelState.set(index,{isDrums,program,vol});
+    const dur=Math.max(0.05,duration);
     synth.noteOn(ch,n.pitch,Math.round((.3+.7*n.vel)*100),{time});
-    synth.noteOff(ch,n.pitch,{time:time+duration});return true;
+    synth.noteOff(ch,n.pitch,{time:time+dur});return true;
   }
   stop(){const version=++this.version;for(const s of this.synths)s.stopAll(true);setTimeout(()=>{if(this.version===version)for(const s of this.synths)s.stopAll(true)},150)}
   resume(){++this.version}

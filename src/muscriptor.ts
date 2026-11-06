@@ -4,9 +4,18 @@ import type { Note } from "./state";
 import { encodeMonoWav } from "./wav";
 
 export type MusNote = { pitch: number; start: number; end: number; instrument: string };
+export type BeatGrid = {
+  bpm: number;
+  beats_per_bar?: number | null;
+  first_downbeat: number;
+  onset_delay?: number;
+  beat_subdivision?: number | null;
+  steady?: boolean;
+  beats?: number[] | null;
+};
 
 /** 中継サーバー経由で muscriptor に採譜を頼む（サーバーに MUSCRIPTOR_URL が設定されているときだけ使える） */
-export async function transcribeWithMuscriptorDetailed(mono: Float32Array, sampleRate: number, instruments: string[], backend: "cpu" | "a100" = "cpu", onStatus: (text: string) => void = () => {}): Promise<{notes:MusNote[];beatGrid?:{bpm:number;first_downbeat:number;onset_delay?:number;beats_per_bar?:number;steady?:boolean}}> {
+export async function transcribeWithMuscriptorDetailed(mono: Float32Array, sampleRate: number, instruments: string[], backend: "cpu" | "a100" = "cpu", onStatus: (text: string) => void = () => {}): Promise<{notes:MusNote[];beatGrid?:BeatGrid}> {
   const r = await fetch(`${location.origin}/api/transcription-jobs?instruments=${encodeURIComponent(instruments.join(","))}&backend=${backend}&grid=1`, {
     method: "POST", headers: { "Content-Type": "audio/wav" }, body: encodeMonoWav(mono, sampleRate),
   });

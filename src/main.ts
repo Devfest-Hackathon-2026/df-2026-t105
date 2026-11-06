@@ -274,7 +274,7 @@ function drawClip(cv: HTMLCanvasElement, id: TrackId) {
 
 function noteConflicts(id:TrackId,a:Note,b:Note){
   const t=project.tracks[id];
-  if(t.polyphonic||trackRole(project,id)==="drums")return a.pitch===b.pitch&&Math.abs(a.step-b.step)<1e-7;
+  if(t.polyphonic||trackRole(project,id)==="drums")return a.pitch===b.pitch&&Math.abs(a.step-b.step)<1e-4;
   return a.step<b.step+b.len&&b.step<a.step+a.len&&((id==="lead"||id==="bass")||a.pitch===b.pitch);
 }
 
@@ -436,7 +436,7 @@ askBtn.onclick = async () => {
       const clipSec = Math.ceil(seconds + barSec * 2);
       const res = await mapConcurrent(specs,parallelism,async (spec,k) => {
         const result=await generateClip(apiKey,{model:model as ClipModel,ctx:engine.context,prompt:buildClipPrompt(spec,{bpm:project.bpm,keyName,role:target,seconds:clipSec,context})});
-        setPreviewCandidate(k,result.buffer);return result;
+        setPreviewCandidate(k,slice(engine.context,result.buffer,0,Math.min(result.buffer.duration,clipSec)));return result;
       });
       fulls = res.map((r) => r.buffer);
       console.info("作曲に使ったモデル:", res.map((r) => r.model));
@@ -470,24 +470,40 @@ askBtn.onclick = async () => {
         const primaryHits=hits.filter(n=>n.instrument===selected.instrument);
         const prior=cleanToGhost(raw.filter(n=>n.instrument===selected.instrument),{bpm:project.bpm,root:project.root,role:target==="bass"?"bass":"lead",bars:generationBars,conform:model!=="realtime"});
         const grid=transcription.beatGrid;
-        const usableGrid=grid&&Number.isFinite(grid.bpm)&&grid.bpm>0&&Number.isFinite(grid.first_downbeat)&&grid.beats_per_bar===4&&grid.steady!==false;
-        const clock=selectAlignedWindow(primaryHits,{bpm:usableGrid?grid.bpm:prior.sourceBpm,bars:generationBars,audioDuration:src.duration,firstDownbeat:usableGrid?grid.first_downbeat:0,onsetDelay:usableGrid?(grid.onset_delay??0):0});
+        const usableGrid=!!(grid&&Number.isFinite(grid.bpm)&&grid.bpm>0);
+        const wantTriplet=/shuffle|シャッフル|swing|スウィング|跳ね|三連|triplet|jazzy|ジャズ|blues|ブルース/i.test(intent+" "+specs[k].prompts.map(p=>p.text).join(" "));
+        const clock=selectAlignedWindow(primaryHits,{bpm:usableGrid?grid.bpm:prior.sourceBpm,bars:generationBars,audioDuration:src.duration,firstDownbeat:usableGrid?(grid.first_downbeat??0):prior.phase,onsetDelay:usableGrid?(grid.onset_delay??0):0,beatGrid:usableGrid?grid:null});
+        const sub=clock.subdivision??(wantTriplet?6:4);
         const corrected=hits.map(n=>({...n,start:n.start-clock.onsetDelay,end:n.end-clock.onsetDelay}));
-        const parts=notesToParts(corrected,{bpm:clock.sourceBpm,bars:generationBars,startSec:clock.startSec,transpose:prior.transpose??0});
+        const parts=notesToParts(corrected,{bpm:clock.sourceBpm,bars:generationBars,startSec:clock.startSec,transpose:prior.transpose??0,windowBeats:clock.windowBeats,subdivision:sub,quantizeStrength:0.85});
         if(!parts.length)throw new Error("ループ区間に音符を拾えませんでした");
         const pitched=parts.filter((p)=>p.role!=="drums");
         const primary=target==="drums"?parts.find((p)=>p.role==="drums"):
           pitched.find((p)=>p.instrument===t.instrument)??pitched.find((p)=>p.role===target)??pitched[0];
         if(!primary)throw new Error("対象のトラックに対応する音を拾えませんでした。原音を確認してください");
         for(const part of parts)for(const note of part.notes)note.step+=startStep;
-        const g:Ghost={startStep,bars:generationBars,notes:primary.notes,conf:primary.notes.map(()=>.5),polyphonic:true,full:fulls[k],startSec:clock.startSec+clock.onsetDelay,sourceBpm:clock.sourceBpm,transpose:prior.transpose,raw:raw.filter((n)=>n.instrument===primary.instrument),ampRatio:0,spec:specs[k],intent,explanation:"",logIndex,label:LABELS[k],proposed:primary.notes.length,accepted:0,model:"MuScriptor"};
+        const alignedSec = Math.max(0.5, (clock.endSec ?? (clock.startSec + (60 / clock.sourceBpm) * 4 * generationBars)) - clock.startSec);
+        const g:Ghost={startStep,bars:generationBars,notes:primary.notes,conf:primary.notes.map(()=>.8),polyphonic:true,full:fulls[k],startSec:clock.startSec+clock.onsetDelay,sourceBpm:clock.sourceBpm,transpose:prior.transpose,raw:raw.filter((n)=>n.instrument===primary.instrument),ampRatio:0,spec:specs[k],intent,explanation:"",logIndex,label:LABELS[k],proposed:primary.notes.length,accepted:0,model:"MuScriptor"};
+        previewBuffers.set(k, slice(engine.context, fulls[k], g.startSec, alignedSec));
+        if (Number(previewTake.value) === k && previewAudio.paused) loadPreview(previewBuffers.get(k)!);
+        if (k === 0) {
+          const gridSel = $<HTMLSelectElement>("grid");
+          if (sub % 3 === 0 || wantTriplet) {
+            const tripletVal = sub === 3 ? "1.3333333333333333" : "0.6666666666666666";
+            gridSel.value = tripletVal;
+            roll.snap = Number(tripletVal);
+          } else if (roll.snap === 0.25) {
+            gridSel.value = "1";
+            roll.snap = 1;
+          }
+        }
         t.polyphonic=true;t.instrument=primary.instrument;t.role=primary.role;t.name=primary.name;t.preset=primary.role==="drums"?"drum:0":`sf:${primary.program}`;
         t.alts!.push(g);touched.add(targetId);
-        for(const part of parts.filter(p=>p!==primary)) {
+        for(const part of parts.filter(p=>p!==primary&&(target!=="drums"&&p.notes.length>=3))) {
           const id:TrackId=Object.values(project.tracks).find(track=>track.id!==targetId&&track.instrument===part.instrument)?.id??`part:${part.instrument}`;
           const track=project.tracks[id]??={id,name:part.name,role:part.role,instrument:part.instrument,preset:part.role==="drums"?"drum:0":`sf:${part.program}`,polyphonic:true,notes:[],mute:false,ghost:null};
           if(!touched.has(id))track.alts=[];
-          const other:Ghost={...g,notes:part.notes,conf:part.notes.map(()=>.5),raw:raw.filter(n=>n.instrument===part.instrument),proposed:part.notes.length};
+          const other:Ghost={...g,notes:part.notes,conf:part.notes.map(()=>.8),raw:raw.filter(n=>n.instrument===part.instrument),proposed:part.notes.length};
           track.alts!.push(other);if(!touched.has(id))track.ghost=other;touched.add(id);
         }
         if(k===0)showAlt(targetId,0);else commit();
