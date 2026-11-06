@@ -10,6 +10,7 @@ import { VelocityLane } from "./velocity";
 import { demoProject, load, save, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
 import { toMono22k, transcribe, warmUp } from "./transcribe";
 import { estimateStartSec, transcribeDrums } from "./core/drums.js";
+import { drumsToGhost, transcribeWithMuscriptor } from "./muscriptor";
 
 let project: Project = load() ?? demoProject();
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -229,8 +230,11 @@ const modelSel = $<HTMLSelectElement>("model");
 const MODEL_KEY = "ghostnotes.model";
 modelSel.value = safeGet(MODEL_KEY) ?? "lyria-3.5";
 // 中継サーバーが Vertex を使うときは 3.5 の代わりに 3 Pro になり、AI Studio のキーがなければ RealTime は使えない
+// サーバー側に muscriptor があれば、ドラムの耳コピに使う（帯域の音量で拾う drums.js より、キックとスネアの取り違えが少ない）
+let transcriber: "basic-pitch" | "muscriptor" = "basic-pitch";
 void serverConfig().then((c) => {
   if (!c) return;
+  if ((c as { transcriber?: string }).transcriber === "muscriptor") transcriber = "muscriptor";
   const opt35 = modelSel.querySelector<HTMLOptionElement>('option[value="lyria-3.5"]')!;
   if (c.musicModels["lyria-3.5"] === "lyria-3-pro-preview") opt35.textContent = "Lyria 3 Pro（音質重視・Vertex）";
   const rt = modelSel.querySelector<HTMLOptionElement>('option[value="realtime"]')!;
@@ -381,6 +385,18 @@ function stopPreview() {
  */
 async function makeDrumGhost(intent: string, spec: LyriaSpec, full: AudioBuffer, logIndex: number, k: number): Promise<Ghost> {
   const mono = await toMono22k(full);
+  if (transcriber === "muscriptor") {
+    try {
+      const hits = await transcribeWithMuscriptor(mono, 22050, ["drums"]);
+      const { notes, startSec } = drumsToGhost(hits, project.bpm, project.bars);
+      return {
+        notes, conf: notes.map(() => 0.8), full, startSec, sourceBpm: project.bpm, raw: [], ampRatio: 0.5,
+        spec, intent, explanation: "", logIndex, label: LABELS[k], proposed: notes.length, accepted: 0, model: "muscriptor",
+      };
+    } catch (e) {
+      console.warn("muscriptor が使えなかったので、帯域の音量で拾う方法に切り替える", e);
+    }
+  }
   const startSec = estimateStartSec(mono, 22050, project.bpm);
   const g: Ghost = {
     notes: [], conf: [], full, startSec, sourceBpm: project.bpm, raw: [], mono, ampRatio: 0.5,
@@ -391,6 +407,7 @@ async function makeDrumGhost(intent: string, spec: LyriaSpec, full: AudioBuffer,
   return g;
 }
 function redetectDrums(g: Ghost, sensitivity: number) {
+  if (!g.mono) return; // muscriptor で拾ったドラムは、感度で拾い直さない
   g.ampRatio = sensitivity;
   const all = transcribeDrums(g.mono!, 22050, { bpm: g.sourceBpm, startSec: g.startSec, bars: project.bars, sensitivity })
     .filter((n) => n.vel >= 0.15);
@@ -671,7 +688,7 @@ function renderGhostPanel() {
   ).join("") + (alts.length < 2 && askBtn.disabled ? `<span class="hint">案Bを準備中…</span>` : "");
   for (const b of $("alts").querySelectorAll<HTMLButtonElement>("[data-alt]")) b.onclick = () => showAlt(t.id, Number(b.dataset.alt));
   renderSpec(g.spec);
-  if (g.model && g.model !== "realtime") {
+  if (g.detectedKey !== undefined) {
     const tp = g.transpose ?? 0;
     $("spec").insertAdjacentHTML("beforeend", `<div class="params">演奏 ${g.sourceBpm.toFixed(1)} BPM・${esc(g.detectedKey ?? "キー不明")}${tp ? `・${tp > 0 ? "+" : ""}${tp} 半音移調` : ""}</div>`);
   }

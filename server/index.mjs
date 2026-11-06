@@ -4,6 +4,7 @@
 // - POST /api/gemini/:model       : Gemini の generateContent を中継する（許可したモデルだけ）
 // - POST /api/music/:model        : Lyria 3.5 / 3 Pro / 3 Clip で作曲し、{ audio, mime, text, model } を返す
 // - WS   /ws/...BidiGenerateMusic : Lyria RealTime の WebSocket を中継する（AI Studio のキーがあるときだけ）
+// - POST /api/transcribe?instruments=drums : 音声（WAV）を muscriptor のサーバー（MUSCRIPTOR_URL）で採譜し、{ events } を返す
 // Lyria RealTime は短時間トークン（ephemeral token）を受け付けないため、中継が必要になる（docs/経緯と設計.md 8章）。
 //
 // 呼び出し先は2通り。
@@ -28,6 +29,8 @@ if (!KEY && !VERTEX_PROJECT) {
   process.exit(1);
 }
 const BACKEND = VERTEX_PROJECT ? "vertex" : "aistudio";
+// muscriptor のサーバー（`muscriptor serve`）。設定されていれば、ドラムなどの耳コピに使う
+const MUSCRIPTOR_URL = process.env.MUSCRIPTOR_URL;
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
 const ALLOWED_MODELS = new Set(["gemini-flash-latest", "gemini-3.5-flash-lite"]);
 // 画面が指定する作曲モデル → 実際に呼ぶモデル。Vertex には 3.5 がないので 3 Pro で代える
@@ -38,7 +41,7 @@ const MAX_MUSIC_SEC = 60;
 
 // IP ごとの簡易な回数制限（Cloud Run のインスタンス内だけで数える）
 const WINDOW_MS = 10 * 60 * 1000;
-const LIMITS = { gemini: 60, music: 15, compose: 20 };
+const LIMITS = { gemini: 60, music: 15, compose: 20, transcribe: 40 };
 const hits = new Map();
 function allow(ip, kind) {
   const now = Date.now();
@@ -170,16 +173,34 @@ async function compose(req, res, requested) {
   res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(out));
 }
 
+/** 音声を muscriptor に送り、SSE で返ってくる音符のイベントを集めて JSON で返す */
+async function transcribeWithMuscriptor(req, res, url) {
+  if (!MUSCRIPTOR_URL) { res.writeHead(404).end("muscriptor is not configured"); return; }
+  if (!allow(clientIp(req), "transcribe")) { res.writeHead(429).end("too many requests"); return; }
+  const body = await readBody(req, 20 * 1024 * 1024);
+  if (!body) { res.writeHead(413).end("too large"); return; }
+  const form = new FormData();
+  form.append("file", new Blob([body], { type: "audio/wav" }), "take.wav");
+  for (const inst of (url.searchParams.get("instruments") ?? "").split(",").filter(Boolean)) form.append("instruments", inst);
+  form.append("detect_tempo", "false");
+  const r = await fetch(`${MUSCRIPTOR_URL}/transcribe`, { method: "POST", body: form });
+  if (!r.ok) { res.writeHead(r.status, { "Content-Type": "text/plain" }).end((await r.text()).slice(0, 300)); return; }
+  const text = await r.text();
+  const events = text.split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6))).filter((e) => e.type === "start" || e.type === "end");
+  res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ events }));
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://x");
     if (url.pathname === "/healthz") { res.writeHead(200).end("ok"); return; }
     if (url.pathname === "/api/config") {
       res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
-        backend: BACKEND, realtime: !!KEY, music: Object.keys(MUSIC_MODELS), musicModels: MUSIC_MODELS,
+        backend: BACKEND, realtime: !!KEY, music: Object.keys(MUSIC_MODELS), musicModels: MUSIC_MODELS, transcriber: MUSCRIPTOR_URL ? "muscriptor" : "basic-pitch",
       }));
       return;
     }
+    if (url.pathname === "/api/transcribe" && req.method === "POST") return await transcribeWithMuscriptor(req, res, url);
     const mm = /^\/api\/music\/([\w.-]+)$/.exec(url.pathname);
     if (mm && req.method === "POST") return await compose(req, res, mm[1]);
     const m = /^\/api\/gemini\/([\w.-]+)$/.exec(url.pathname);
