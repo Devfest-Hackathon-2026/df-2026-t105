@@ -15,10 +15,13 @@ import { contentBars, demoProject, describeForLyria, load, save, trackRole, type
 import { toMono22k, transcribe, warmUp } from "./transcribe";
 import { estimateStartSec, transcribeDrums } from "./core/drums.js";
 import { drumsToGhost, transcribeWithMuscriptor, transcribeWithMuscriptorDetailed } from "./muscriptor";
+import { Tutorial, tutorialSeen } from "./tutorial";
 
 let project: Project = load() ?? demoProject();
 project.bars=contentBars(project);
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+/** 曲の中身を変えた回数（使い方の案内が「操作できたか」を見るのに使う） */
+let editRevision = 0;
 
 let seekStep = 0;
 function updatePositionLcd(s: number) {
@@ -677,13 +680,13 @@ askBtn.onclick = async () => {
           }
         }
         t.polyphonic=true;t.instrument=primary.instrument;t.role=primary.role;t.name=primary.name;t.preset=primary.role==="drums"?"drum:0":`sf:${primary.program}`;
-        t.alts!.push(g);touched.add(targetId);
+        t.alts!.push(rememberOriginal(g));touched.add(targetId);
         for(const part of others.filter(p=>target!=="drums"&&p.notes.length>=3)) {
           const id:TrackId=Object.values(project.tracks).find(track=>track.id!==targetId&&track.instrument===part.instrument)?.id??`part:${part.instrument}`;
           const track=project.tracks[id]??={id,name:part.name,role:part.role,instrument:part.instrument,preset:part.role==="drums"?"drum:0":`sf:${part.program}`,polyphonic:true,notes:[],mute:false,ghost:null};
           if(!touched.has(id))track.alts=[];
           const other:Ghost={...g,notes:part.notes,conf:part.notes.map(()=>.8),raw:raw.filter(n=>n.instrument===part.instrument),proposed:part.notes.length};
-          track.alts!.push(other);if(!touched.has(id))track.ghost=other;touched.add(id);
+          track.alts!.push(rememberOriginal(other));if(!touched.has(id))track.ghost=other;touched.add(id);
         }
         if(k===0)showAlt(targetId,0);else commit();
       }else{
@@ -691,7 +694,7 @@ askBtn.onclick = async () => {
         if(target==="drums")g=await makeDrumGhost(intent,specs[k],fulls[k],logIndex,k,backend,generationBars);
         else{const src=model==="realtime"?fulls[k]:slice(engine.context,fulls[k],0,Math.min(fulls[k].duration,Math.max(24,2*generationBars*barSec+8)));const raw=await transcribe(src,(p)=>setStatus(`3/3 耳コピしています ${Math.round(p*100)}%`));g=makeGhost(target,intent,specs[k],fulls[k],raw,logIndex,k,undefined,model!=="realtime",generationBars);g.model=model}
         g.startStep=startStep;g.bars=generationBars;for(const note of g.notes)note.step+=startStep;
-        t.polyphonic=true;t.alts!.push(g);touched.add(targetId);if(k===0)showAlt(targetId,0);else commit();
+        t.polyphonic=true;t.alts!.push(rememberOriginal(g));touched.add(targetId);if(k===0)showAlt(targetId,0);else commit();
       }
     }
     if(![...touched].some((id)=>project.tracks[id].alts?.some((g)=>g.notes.length)))throw new Error("音を拾えませんでした。生成音を確認してください");
@@ -804,17 +807,16 @@ type DemoSet = {
   cands: { spec: LyriaSpec; explanation: string; raw: Ghost["raw"]; startSec: number; sourceBpm: number; transpose?: number; detectedKey?: string; model?: string; audio: string }[];
 };
 const params = new URLSearchParams(location.search);
-if (params.has("demo")) {
-  const btn = $<HTMLButtonElement>("demoBtn");
-  btn.hidden = false;
-  btn.onclick = async () => {
-    btn.disabled = true;
+/** 事前に生成した2案を開く。?demo のボタンと、使い方の案内から呼ぶ */
+async function loadDemoProposals(): Promise<boolean> {
     try {
       setStatus("事前に生成した提案を読み込んでいます");
       const set = (await (await fetch(`${import.meta.env.BASE_URL}demo/set.json`)).json()) as DemoSet;
       if (set.bpm !== project.bpm || set.root !== project.root) {
         project.bpm = set.bpm; project.root = set.root; bpmInput.value = String(set.bpm); keySel.value = set.root; engine.setBpm(set.bpm);
       }
+      // 収録時のトラックを消していたら、いま編集しているトラックに出す
+      if (!project.tracks[set.target]) set.target = roll.track as typeof set.target;
       targetSel.value = set.target;
       intentInput.value = set.intent;
       const fulls = await Promise.all(set.cands.map(async (c) =>
@@ -831,18 +833,56 @@ if (params.has("demo")) {
         g.explanation = c.explanation;
         g.model = c.model;
         g.detectedKey = c.detectedKey;
-        return g;
+        return rememberOriginal(g);
       });
       project.log[logIndex].proposed = Math.max(...t.alts.map((g) => g.proposed));
       roll.track = set.target;roll.startBar=0;
       showAlt(set.target, 0);
       setStatus(`事前に生成した2案（${new Date(set.createdAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）`);
+      return true;
     } catch (e) {
       setStatus(`デモ用の提案を読み込めませんでした: ${(e as Error).message}`, true);
-    } finally {
-      btn.disabled = false;
+      return false;
     }
+}
+if (params.has("demo")) {
+  const btn = $<HTMLButtonElement>("demoBtn");
+  btn.hidden = false;
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try { await loadDemoProposals(); } finally { btn.disabled = false; }
   };
+}
+
+// ---------- 使い方の案内 ----------
+const tutorial = new Tutorial({
+  showPane: showMobilePane,
+  loadDemo: loadDemoProposals,
+  fillIntent: (text) => { intentInput.value = text; intentInput.dispatchEvent(new Event("input", { bubbles: true })); },
+  state: () => {
+    const t = project.tracks[roll.track];
+    const alts = t?.alts ?? (t?.ghost ? [t.ghost] : []);
+    return {
+      notes: t?.notes.length ?? 0,
+      proposal: !!t?.ghost,
+      alts: alts.length,
+      shownAlt: t?.ghost?.label ?? null,
+      accepted: alts.reduce((sum, a) => sum + a.accepted, 0),
+      generating: askBtn.disabled,
+      playing: engine.playing,
+      selected: roll.selected.size,
+      selectTool: roll.tool === "select",
+      revision: editRevision,
+      historyPos: historyIndex,
+    };
+  },
+});
+const tutorialBtn = $<HTMLButtonElement>("tutorialBtn");
+tutorialBtn.onclick = () => { tutorialBtn.classList.remove("attention"); tutorial.start(); };
+// はじめて開いた人には、最初の画面だけ自動で出す
+if (!tutorialSeen() && !params.has("demo")) {
+  tutorialBtn.classList.add("attention");
+  requestAnimationFrame(() => tutorial.start());
 }
 if (params.has("debug")) {
   // scripts/make-demo.mjs が、いま表示している2案をデモ用に書き出すときに使う
@@ -864,6 +904,34 @@ function wavBase64(buf: AudioBuffer): string {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+/** 届いた時点の提案を控えておく（案のカードを押したときに戻すため）。音符は採用で曲側と共有されるので複製する */
+function rememberOriginal(g: Ghost): Ghost {
+  g.original = { notes: g.notes.map((n) => ({ ...n })), conf: [...g.conf], startSec: g.startSec, ampRatio: g.ampRatio };
+  return g;
+}
+/**
+ * 案のカードを押したとき: その案を表示し、提案の音を届いた時点の状態に戻す。
+ * 採用・消去・ずらし・拾う音の量の変更で減った提案を、もう一度全部出す。曲に入っている音（採用済みの音）には触れない
+ */
+function resetAlt(id: TrackId, k: number) {
+  const t = project.tracks[id];
+  const g = t.alts?.[k] ?? (k === 0 ? t.ghost : null);
+  if (!g) return;
+  if (g.original) {
+    g.notes = g.original.notes.map((n) => ({ ...n }));
+    g.conf = [...g.original.conf];
+    g.startSec = g.original.startSec;
+    g.ampRatio = g.original.ampRatio;
+    // 採用数は、提案の音のうち、いま曲に残っているものの数で数え直す（採用後に削除した音は数えない）
+    const kept = g.notes.filter((n) => t.notes.some((x) => x.pitch === n.pitch && Math.abs(x.step - n.step) < 1e-4)).length;
+    const entry = project.log[g.logIndex];
+    if (entry) entry.accepted = Math.max(0, entry.accepted - g.accepted + kept);
+    g.accepted = kept;
+  }
+  if (t.alts) showAlt(id, k);
+  else { t.ghost = g; roll.track = id; applyLyriaSlice(g); commit(); }
+  setStatus(`案${g.label}の提案を、届いたときの状態に戻しました`);
 }
 /** 案を切り替える。採用済みの音はそのまま残り、ゴーストだけが入れ替わる */
 function showAlt(id: TrackId, k: number) {
@@ -1093,7 +1161,11 @@ function closeGhost(adoptAndConfirm: boolean) {
       delete comps[track.id];
     }
   }
-  engine.setLyria(null);
+  // 確定したときは、いちばん多く採用した案の原音を残し、確定後も「原音」で聴き比べられるようにする。
+  // 次の提案が届くと showAlt で差し替わる。見送ったときは外す
+  const adopted = adoptAndConfirm ? alts.reduce((a, b) => (b.accepted > a.accepted ? b : a)) : null;
+  if (adopted && adopted.accepted > 0) applyLyriaSlice(adopted);
+  else engine.setLyria(null);
   setStatus(adoptAndConfirm ? "提案を採用しました" : "提案を見送りました");
   commit();
 }
@@ -1115,14 +1187,14 @@ function renderGhostPanel() {
     const nb = compBars(k);
     return `<div class="take-card" data-alt="${k}" aria-current="${a === g}">
       <div class="take-card-head">
-        <button class="take-pick" data-alt="${k}" aria-pressed="${a === g}"><span class="take-dot"></span><b>案${a.label}</b>「${esc(a.spec.title ?? "")}」</button>
+        <button class="take-pick" data-alt="${k}" aria-pressed="${a === g}" title="案${a.label}を表示して、提案の音を届いたときの状態に戻す（採用済みの音は残る）"><span class="take-dot"></span><b>案${a.label}</b>「${esc(a.spec.title ?? "")}」</button>
         ${nb ? `<span class="badge">${nb}小節採用</span>` : a.accepted ? `<span class="badge">${a.accepted}音採用</span>` : ""}
         <button class="icon-btn listen" data-listen="${k}" title="案${a.label}の原音を聴く" aria-label="案${a.label}の原音を聴く"><svg><use href="#i-speaker" /></svg></button>
       </div>
 
     </div>`;
   }).join("") + (alts.length < requestedCount && askBtn.disabled ? `<span class="hint">案Bを準備中</span>` : "");
-  for (const b of $("alts").querySelectorAll<HTMLButtonElement>(".take-pick")) b.onclick = () => showAlt(t.id, Number(b.dataset.alt));
+  for (const b of $("alts").querySelectorAll<HTMLButtonElement>(".take-pick")) b.onclick = () => resetAlt(t.id, Number(b.dataset.alt));
   for (const b of $("alts").querySelectorAll<HTMLButtonElement>("[data-listen]")) {
     b.onclick = () => {
       const a = alts[Number(b.dataset.listen)];
@@ -1271,6 +1343,7 @@ function renderAll() {
   vel.draw();
 }
 function commit() {
+  editRevision++;
   const extent=contentBars(project);
   if(project.bars!==extent){project.bars=extent;engine.setBars(extent)}
   recordHistory();

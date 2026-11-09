@@ -32,6 +32,8 @@ export type Ghost = {
   label: string;
   proposed: number;
   accepted: number;
+  /** 届いた時点の提案。案のカードを押したときに、ここから提案の音を戻す */
+  original?: { notes: Note[]; conf: number[]; startSec: number; ampRatio: number };
 };
 export type Track = {
   id: TrackId;
