@@ -114,6 +114,19 @@ export class Roll {
     return { r, rows, steps, cw, rh };
   }
 
+  private keyPitchAt(relX: number, relY: number): number | null {
+    const { rows, rh } = this.geom();
+    const idx = Math.floor((relY - RULER_H) / rh);
+    const row = rows[idx];
+    if (!row) return null;
+    if (trackRole(this.get(), this.track) !== "drums" && row.black && relX >= this.labelW * 0.62) {
+      const inRowY = relY - RULER_H - idx * rh;
+      const neighbor = rows[inRowY < rh / 2 ? idx - 1 : idx + 1];
+      if (neighbor) return neighbor.pitch;
+    }
+    return row.pitch;
+  }
+
   private hit(e: PointerEvent | MouseEvent) {
     const { r, rows, steps, cw, rh } = this.geom();
     const x = e.clientX - r.left - this.labelW, y = e.clientY - r.top - RULER_H;
@@ -213,10 +226,10 @@ export class Roll {
 
     // 2. 左の鍵盤を押したら、その高さの音を鳴らす（上下ドラッグで連続試聴）
     if (relX < this.labelW && relY >= RULER_H) {
-      const row = rows[Math.floor((relY - RULER_H) / rh)];
-      if (row) {
-        this.onAudition(row.pitch);
-        const dummy: Note = { step: 0, len: 1, pitch: row.pitch, vel: 0.8 };
+      const pitch = this.keyPitchAt(relX, relY);
+      if (pitch !== null) {
+        this.onAudition(pitch);
+        const dummy: Note = { step: 0, len: 1, pitch, vel: 0.8 };
         this.drag = {
           pointerId: e.pointerId,
           mode: "keys",
@@ -231,7 +244,7 @@ export class Roll {
           origLen: 1,
           origRow: 0,
           origViewBars: this.viewBars,
-          lastAuditionPitch: row.pitch,
+          lastAuditionPitch: pitch,
           next: dummy,
           moved: false,
         };
@@ -373,11 +386,11 @@ export class Roll {
       const dx = e.clientX - this.drag.startX, dy = e.clientY - this.drag.startY;
       if (!this.drag.moved && Math.hypot(dx, dy) >= CLICK_RADIUS) this.drag.moved = true;
       if (this.drag.mode === "keys") {
-        const { r, rows, rh } = this.geom();
-        const row = rows[Math.floor((e.clientY - r.top - RULER_H) / rh)];
-        if (row && row.pitch !== this.drag.lastAuditionPitch) {
-          this.drag.lastAuditionPitch = row.pitch;
-          this.onAudition(row.pitch);
+        const { r } = this.geom();
+        const pitch = this.keyPitchAt(Math.max(0, Math.min(this.labelW - 1, e.clientX - r.left)), e.clientY - r.top);
+        if (pitch !== null && pitch !== this.drag.lastAuditionPitch) {
+          this.drag.lastAuditionPitch = pitch;
+          this.onAudition(pitch);
         }
         return;
       }
@@ -865,10 +878,11 @@ export class Roll {
     }
 
     // 左の鍵盤（ドラムは楽器名）
-    c.fillStyle = v("--surface-2");
+    c.fillStyle = drums ? v("--surface-2") : v("--key-white");
     c.fillRect(0, T, L, r.height - T);
     c.font = `11px ${font}`;
     c.textBaseline = "middle";
+    const blackW = Math.round(L * 0.62);
     rows.forEach((row, i) => {
       const yy = T + i * rh;
       if (drums) {
@@ -878,14 +892,15 @@ export class Roll {
         c.fillRect(0, yy + rh - 1, L, 1);
         return;
       }
-      c.fillStyle = row.black ? v("--key-black") : v("--key-white");
-      c.fillRect(0, yy, row.black ? L * 0.62 : L, rh);
       if (row.black) {
-        c.fillStyle = v("--key-white");
-        c.fillRect(L * 0.62, yy, L * 0.38, rh);
+        c.fillStyle = v("--key-black");
+        c.fillRect(0, yy, blackW, rh);
+        c.fillStyle = v("--key-line");
+        c.fillRect(blackW, Math.round(yy + rh / 2) - 0.5, L - blackW, 0.5);
+      } else if (row.pitch % 12 === 0 || row.pitch % 12 === 5 || i === rows.length - 1) {
+        c.fillStyle = v("--key-line");
+        c.fillRect(0, Math.round(yy + rh) - 0.5, L, 0.5);
       }
-      c.fillStyle = v("--key-line");
-      c.fillRect(0, yy + rh - 0.5, L, 0.5);
       if (row.pitch % 12 === 0 && rh >= 8) {
         c.fillStyle = v("--key-black");
         c.textAlign = "right";
