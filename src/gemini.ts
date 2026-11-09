@@ -3,7 +3,7 @@ import { describeTrack, trackRole } from "./state";
 
 const MODEL = "gemini-flash-latest";
 
-async function callJson<T>(apiKey: string, prompt: string, schema: object): Promise<T> {
+async function callJson<T>(apiKey: string, prompt: string, schema: object, thinkingLevel: "low" | "high" = "low"): Promise<T> {
   // キーがあれば直接呼ぶ。なければ同じオリジンの中継サーバー（server/index.mjs）を通す
   const url = apiKey
     ? `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`
@@ -13,7 +13,7 @@ async function callJson<T>(apiKey: string, prompt: string, schema: object): Prom
     headers: { "Content-Type": "application/json", ...(apiKey ? { "x-goog-api-key": apiKey } : {}) },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json", responseSchema: schema, thinkingConfig: { thinkingLevel: "low" } },
+      generationConfig: { responseMimeType: "application/json", responseSchema: schema, thinkingConfig: { thinkingLevel } },
     }),
   });
   if (!r.ok) throw new Error(`Gemini ${r.status}: ${(await r.text()).slice(0, 300)}`);
@@ -99,4 +99,124 @@ In Japanese, 3 short bullet points: (1) the shape of this phrase (rhythm, contou
     required: ["bullets"],
   });
   return r.bullets.map((b) => "・" + b.replace(/^[・\-\s]+/, "")).join("\n");
+}
+
+// ---------- 提案を言葉で直す ----------
+
+export type RevisionChange = { where: string; what: string; why: string };
+export type Revision = { notes: Note[]; summary: string; changes: RevisionChange[] };
+
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const pitchName = (m: number) => `${NOTE_NAMES[((m % 12) + 12) % 12]}${Math.floor(m / 12) - 1}`;
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
+/** 16分を1とするステップを「小節.拍」で書く（小節・拍とも1始まり。拍は小数で、0.25 が16分音符1つ） */
+const at = (step: number) => `bar ${Math.floor(step / 16) + 1} beat ${round3((step % 16) / 4 + 1)}`;
+
+/**
+ * 耳コピした提案を、利用者の言葉（「もっと滑らかに」など）に沿って直した版を作る。
+ * 返すのは直したあとの音すべてと、変えた箇所ごとの音楽的な理由。
+ * 提案を書き換えるのではなく、別の案として並べるために使う（採るかどうかは利用者が決める）。
+ */
+export async function reviseGhost(
+  apiKey: string,
+  p: Project,
+  target: TrackId,
+  ghost: { notes: Note[]; startStep: number; bars: number },
+  intent: string,
+  instruction: string,
+): Promise<Revision> {
+  const role = trackRole(p, target);
+  const from = ghost.startStep, to = ghost.startStep + ghost.bars * 16;
+  const inWindow = (n: Note) => n.step < to && n.step + n.len > from;
+  const fmt = (n: Note) => `${at(n.step)}: ${pitchName(n.pitch)} (midi ${n.pitch}), ${round3(n.len / 4)} beats, vel ${round3(n.vel)}`;
+  const context = (Object.keys(p.tracks) as TrackId[])
+    .map((id) => {
+      const t = p.tracks[id];
+      const notes = t.notes.filter(inWindow).sort((a, b) => a.step - b.step || a.pitch - b.pitch);
+      if (!notes.length) return "";
+      const head = `${t.name} (${trackRole(p, id)}${id === target ? ", the same track as the proposal; notes the user already has" : ""})`;
+      return `${head}:\n` + notes.map((n) => "  " + fmt(n)).join("\n");
+    })
+    .filter(Boolean)
+    .join("\n");
+  const proposal = [...ghost.notes].sort((a, b) => a.step - b.step || a.pitch - b.pitch).map((n) => "  " + fmt(n)).join("\n");
+  const prompt = `You are a music teacher helping a beginner producer edit a transcribed phrase.
+Song: ${p.bpm} BPM, 4/4, key ${p.root} major / its relative minor. Positions are "bar N beat B" (both 1-based; beat 1.5 = the "and" of beat 1; 0.25 beat = one 16th note).
+The phrase covers bars ${Math.floor(from / 16) + 1}-${Math.floor(to / 16)} (beat 1 of bar ${Math.floor(from / 16) + 1} up to, but not including, beat 1 of bar ${Math.floor(to / 16) + 1}).
+The user originally asked for: """${intent}"""
+
+Other parts in the same bars:
+${context || "  (none)"}
+
+Proposed ${role} phrase (transcribed from audio):
+${proposal || "  (empty)"}
+
+The user now asks you to revise this phrase: """${instruction}"""
+
+Rules:
+- Return the COMPLETE revised phrase (every note, changed or not) in "notes". Keep notes you do not need to change exactly as they are (same bar, beat, pitch, beats).
+- Make the smallest set of changes that clearly achieves the request, and keep the character of the original phrase. Do not rewrite everything.
+- Stay inside the phrase's bars. ${role === "drums" ? "Use General MIDI drum note numbers." : "Keep the register playable for this instrument (roughly the same range as the original)."}
+- Fit the other parts: check chord tones against the bass/chords sounding at the same time, and the rhythm against the drums.
+- "changes": one entry per musical change (group related notes). "where": the position in Japanese like "3小節目 2拍目". "what": what changed, with note names, e.g. "E5→C5 の跳躍を E5→D5→C5 に". "why": the musical reason in Japanese, for a beginner. Name the concept (順次進行, 跳躍の後の反行, 経過音, 刺繍音, コードトーン, 倚音と解決, シンコペーション, 音域, 動機の反復 など) and explain it in one plain sentence. Only state what is true of the given notes.
+- "summary": one short Japanese sentence describing the overall revision.`;
+  const r = await callJson<{ summary: string; notes: { bar: number; beat: number; pitch: number; beats: number; velocity?: number }[]; changes: RevisionChange[] }>(
+    apiKey,
+    prompt,
+    {
+      type: "OBJECT",
+      properties: {
+        summary: { type: "STRING" },
+        changes: {
+          type: "ARRAY",
+          items: { type: "OBJECT", properties: { where: { type: "STRING" }, what: { type: "STRING" }, why: { type: "STRING" } }, required: ["where", "what", "why"] },
+        },
+        notes: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: { bar: { type: "INTEGER" }, beat: { type: "NUMBER" }, pitch: { type: "INTEGER" }, beats: { type: "NUMBER" }, velocity: { type: "NUMBER" } },
+            required: ["bar", "beat", "pitch", "beats"],
+          },
+        },
+      },
+      required: ["summary", "changes", "notes"],
+    },
+    "low",
+  );
+  return { summary: r.summary ?? "", changes: r.changes ?? [], notes: sanitizeRevision(r.notes ?? [], ghost, role === "drums") };
+}
+
+/**
+ * Gemini が返した音を、アプリで扱える音符にする。
+ * 範囲外・音域外の音は捨てる。元の提案とほぼ同じ音は元の値をそのまま使う（耳コピの細かい発音時刻を保つ）。
+ */
+export function sanitizeRevision(
+  raw: { bar: number; beat: number; pitch: number; beats: number; velocity?: number }[],
+  ghost: { notes: Note[]; startStep: number; bars: number },
+  drums: boolean,
+): Note[] {
+  const from = ghost.startStep, to = ghost.startStep + ghost.bars * 16;
+  const lo = drums ? 27 : Math.max(0, Math.min(...ghost.notes.map((n) => n.pitch), 127) - 12);
+  const hi = drums ? 87 : Math.min(127, Math.max(...ghost.notes.map((n) => n.pitch), 0) + 12);
+  const avgVel = ghost.notes.length ? ghost.notes.reduce((a, n) => a + n.vel, 0) / ghost.notes.length : 0.8;
+  const used = new Set<Note>();
+  const out: Note[] = [];
+  for (const r of raw) {
+    if (![r.bar, r.beat, r.pitch, r.beats].every(Number.isFinite)) continue;
+    const step = (r.bar - 1) * 16 + (r.beat - 1) * 4;
+    const pitch = Math.round(r.pitch);
+    if (step < from - 1e-6 || step >= to || pitch < lo || pitch > hi) continue;
+    const len = Math.max(0.25, Math.min(r.beats * 4, to - step));
+    // 元の提案に、同じ高さで 1/16 未満しかずれていない音があれば、それを残したものとみなす
+    const same = ghost.notes.find((n) => !used.has(n) && n.pitch === pitch && Math.abs(n.step - step) < 1 && Math.abs(n.len - len) < 1);
+    if (same) { used.add(same); out.push({ ...same }); continue; }
+    const vel = Number.isFinite(r.velocity) ? Math.max(0.05, Math.min(1, r.velocity!)) : avgVel;
+    out.push({ step, len, pitch, vel });
+  }
+  // 同じ位置・同じ高さの重複を除く
+  const seen = new Set<string>();
+  return out
+    .sort((a, b) => a.step - b.step || a.pitch - b.pitch)
+    .filter((n) => { const k = `${n.pitch}@${n.step.toFixed(3)}`; if (seen.has(k)) return false; seen.add(k); return true; });
 }

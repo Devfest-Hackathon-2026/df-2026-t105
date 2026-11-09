@@ -1,4 +1,4 @@
-import { DRUM_ROWS, trackRole, trackRange, type Note, type Project, type TrackId } from "./state";
+import { DRUM_ROWS, noteKey, trackRole, trackRange, type Note, type Project, type TrackId } from "./state";
 
 const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const BLACK = [1, 3, 6, 8, 10];
@@ -834,6 +834,28 @@ export class Roll {
       }
     }
 
+    // AI に直してもらった版: 消した音を灰色の点線と取り消し線で示す（直す前と比べられるように）
+    const rv = t.ghost?.revision;
+    const changed = rv ? new Set(rv.changed) : null;
+    rv?.removed.forEach((n) => {
+      const yy = y(n.pitch);
+      if (yy < T || n.step + n.len < this.startBar * 16 || n.step >= (this.startBar + this.viewBars) * 16) return;
+      const nx = L + (n.step - this.startBar * 16) * cw + 1.5, nw = Math.max(drums ? 8 : 3, n.len * cw - 3);
+      c.strokeStyle = v("--muted");
+      c.globalAlpha = 0.7;
+      c.lineWidth = 1.2;
+      c.setLineDash([2, 3]);
+      c.beginPath();
+      c.roundRect(nx, yy + 1.5, nw, rh - 3, 3);
+      c.stroke();
+      c.setLineDash([]);
+      c.beginPath();
+      c.moveTo(nx + 2, yy + rh / 2);
+      c.lineTo(nx + nw - 2, yy + rh / 2);
+      c.stroke();
+      c.globalAlpha = 1;
+    });
+
     // 提案（ゴースト）: 紫の枠。確からしい音は実線、誤検出かもしれない音は点線
     t.ghost?.notes.forEach((n, i) => {
       const yy = y(n.pitch);
@@ -847,7 +869,10 @@ export class Roll {
       c.fill();
       c.globalAlpha = 0.5 + 0.5 * conf;
       c.setLineDash(conf > 0.6 ? [] : [3, 3]);
-      c.lineWidth = 1.5;
+      // AI が変えた・足した音は太い枠にする
+      const isChanged = !!changed?.has(noteKey(n));
+      c.lineWidth = isChanged ? 3 : 1.5;
+      if (isChanged) c.globalAlpha = 1;
       c.stroke();
       c.setLineDash([]);
       c.globalAlpha = 1;
