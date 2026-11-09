@@ -25,7 +25,7 @@ const KEY = process.env.GEMINI_API_KEY;
 const VERTEX_PROJECT = process.env.VERTEX_PROJECT;
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION ?? "global";
 // Vertex で使う Gemini のモデル（AI Studio の gemini-flash-latest のような別名は Vertex にはない）
-const VERTEX_GEMINI_MODEL = process.env.VERTEX_GEMINI_MODEL ?? "gemini-2.5-flash";
+const VERTEX_GEMINI_MODEL = process.env.VERTEX_GEMINI_MODEL ?? "gemini-3-flash-preview";
 if (!KEY && !VERTEX_PROJECT) {
   console.error("GEMINI_API_KEY か VERTEX_PROJECT のどちらかを設定してください");
   process.exit(1);
@@ -126,8 +126,9 @@ async function proxyGemini(req, res, model) {
   if (!body) { res.writeHead(413).end("too large"); return; }
   let r;
   if (BACKEND === "vertex") {
-    // Vertex の generateContent は AI Studio と同じ形の本文を受け取る。thinkingLevel は Gemini 3 系だけなので外す
+    // Vertex の generateContent は AI Studio と同じ形の本文を受け取るが、contents[].role が必須。thinkingLevel は Gemini 3 系だけなので外す
     const j = JSON.parse(body.toString());
+    if (Array.isArray(j.contents)) for (const c of j.contents) c.role ??= "user";
     if (!VERTEX_GEMINI_MODEL.startsWith("gemini-3")) delete j.generationConfig?.thinkingConfig;
     r = await fetch(`${vertexBase()}/publishers/google/models/${VERTEX_GEMINI_MODEL}:generateContent`, {
       method: "POST",
@@ -145,7 +146,7 @@ async function proxyGemini(req, res, model) {
   res.end(Buffer.from(await r.arrayBuffer()));
 }
 
-/** 作曲。AI Studio は generateContent、Vertex は interactions API。どちらも { audio(base64), mime, text, model } にそろえて返す */
+/** 作曲。AI Studio / Vertex ともに generateContent で呼び、{ audio(base64), mime, text, model } にそろえて返す */
 async function compose(req, res, requested) {
   const model = MUSIC_MODELS[requested];
   if (!model) { res.writeHead(400).end("model not allowed"); return; }
@@ -154,30 +155,22 @@ async function compose(req, res, requested) {
   if (!body) { res.writeHead(413).end("too large"); return; }
   const { prompt } = JSON.parse(body.toString());
   if (typeof prompt !== "string" || !prompt.trim()) { res.writeHead(400).end("prompt required"); return; }
-  let out;
-  if (BACKEND === "vertex") {
-    const r = await fetch(`${vertexBase()}/interactions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${await vertexToken()}` },
-      body: JSON.stringify({ model, input: [{ type: "user_input", content: [{ type: "text", text: prompt }] }] }),
-    });
-    if (!r.ok) { res.writeHead(r.status, { "Content-Type": "text/plain" }).end((await r.text()).slice(0, 500)); return; }
-    const j = await r.json();
-    const contents = (j.steps ?? []).flatMap((s) => s.content ?? []);
-    const audio = contents.find((c) => c.type === "audio" && c.data);
-    out = { audio: audio?.data ?? null, mime: audio?.mime_type ?? null, text: contents.filter((c) => c.type === "text").map((c) => c.text).join("\n"), model };
-  } else {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": KEY },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["AUDIO", "TEXT"] } }),
-    });
-    if (!r.ok) { res.writeHead(r.status, { "Content-Type": "text/plain" }).end((await r.text()).slice(0, 500)); return; }
-    const j = await r.json();
-    const parts = j.candidates?.[0]?.content?.parts ?? [];
-    const audio = parts.find((p) => p.inlineData?.data);
-    out = { audio: audio?.inlineData.data ?? null, mime: audio?.inlineData.mimeType ?? null, text: parts.filter((p) => p.text).map((p) => p.text).join("\n"), model: j.modelVersion ?? model };
-  }
+  const url = BACKEND === "vertex"
+    ? `${vertexBase()}/publishers/google/models/${model}:generateContent`
+    : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const headers = BACKEND === "vertex"
+    ? { "Content-Type": "application/json", Authorization: `Bearer ${await vertexToken()}` }
+    : { "Content-Type": "application/json", "x-goog-api-key": KEY };
+  const r = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["AUDIO", "TEXT"] } }),
+  });
+  if (!r.ok) { res.writeHead(r.status, { "Content-Type": "text/plain" }).end((await r.text()).slice(0, 500)); return; }
+  const j = await r.json();
+  const parts = j.candidates?.[0]?.content?.parts ?? [];
+  const audio = parts.find((p) => p.inlineData?.data);
+  const out = { audio: audio?.inlineData.data ?? null, mime: audio?.inlineData.mimeType ?? null, text: parts.filter((p) => p.text).map((p) => p.text).join("\n"), model: j.modelVersion ?? model };
   res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(out));
 }
 
