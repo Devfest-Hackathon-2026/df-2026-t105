@@ -7,11 +7,11 @@ import { Engine, renderMix } from "./audio";
 import { downloadBytes, encodeWav } from "./wav";
 import { cleanToGhost, estimateKey, NOTE_NAMES } from "./core/clean.js";
 import { downloadMidi, fromMidiFile, toMidiFile } from "./core/midi.js";
-import { intentToSpecs } from "./gemini";
+import { intentToSpecs, reviseGhost } from "./gemini";
 import { buildClipPrompt, generate, generateClip, serverConfig, slice, type ClipModel } from "./lyria";
 import { KEY_W, Roll, type RollTool } from "./roll";
 import { VelocityLane } from "./velocity";
-import { contentBars, demoProject, describeForLyria, load, save, trackRole, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
+import { contentBars, demoProject, describeForLyria, load, noteKey, noteSignature, save, trackRole, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
 import { toMono22k, transcribe, warmUp } from "./transcribe";
 import { estimateStartSec, transcribeDrums } from "./core/drums.js";
 import { drumsToGhost, transcribeWithMuscriptor, transcribeWithMuscriptorDetailed } from "./muscriptor";
@@ -1206,7 +1206,9 @@ function renderGhostPanel() {
     const tp = g.transpose ?? 0;
     $("spec").insertAdjacentHTML("beforeend", `<div class="params">演奏 ${g.sourceBpm.toFixed(1)} BPM・${esc(g.detectedKey ?? "キー不明")}${tp ? `・${tp > 0 ? "+" : ""}${tp} 半音移調` : ""}</div>`);
   }
-  sens.closest<HTMLElement>("label")!.hidden = !!g.polyphonic;
+  // AI が直した版は耳コピし直すと直した内容が消えるので、拾う音の量は出さない
+  sens.closest<HTMLElement>("label")!.hidden = !!g.polyphonic || !!g.revision;
+  renderRevisionNotes(g);
   sens.value = String(Math.round((t.id === "drums" ? g.ampRatio : 1 - g.ampRatio) * 100));
   const occupied=new Set(g.notes.map(n=>Math.floor(n.step/16))).size;
   $("ghostSummary").textContent = g.notes.length?`残り ${g.notes.length}音 · 採用 ${g.accepted}音 · ${occupied}/${g.bars??project.bars}小節`:`${g.accepted}音採用済み`;
@@ -1252,6 +1254,90 @@ $("nudgeR").onclick = () => nudge(1);
 $("acceptAll").onclick = acceptAll;
 $("discard").onclick = () => closeGhost(false);
 $("close").onclick = () => closeGhost(true);
+
+// ---------- AI に言葉で直してもらう ----------
+// 表示中の案を、利用者の言葉（「もっと滑らかに」など）に沿って Gemini に直させ、別の案（案A′ など）として並べる。
+// 元の案は書き換えない。どちらを採るか、どの音を採るかは利用者が決める。
+const reviseInput = $<HTMLInputElement>("reviseText");
+const reviseBtn = $<HTMLButtonElement>("reviseBtn");
+let revising = false;
+async function reviseCurrent(instruction: string) {
+  const id = roll.track;
+  const t = project.tracks[id];
+  const g = t.ghost;
+  if (!g || revising) return;
+  instruction = instruction.trim();
+  if (!instruction) { setStatus("どう直したいかを書いてください", true); reviseInput.focus(); return; }
+  // まだ何も採用していなければ、いま見えている提案（ずらし・消去を反映したもの）を直す。
+  // 採用が始まっていたら提案が減っているので、届いた時点の提案を直す
+  const source = (g.accepted === 0 || !g.original ? g.notes : g.original.notes).map((n) => ({ ...n }));
+  if (!source.length) { setStatus("直す対象の提案の音がありません。案のカードを押して提案を戻してください", true); return; }
+  revising = true;
+  renderReviseBusy();
+  setStatus(`AI が「${instruction}」の修正案を考えています`);
+  try {
+    const startStep = g.startStep ?? 0, bars = g.bars ?? project.bars;
+    const r = await reviseGhost(apiKeyInput.value.trim(), project, id, { notes: source, startStep, bars }, g.intent, instruction);
+    if (!r.notes.length) throw new Error("修正案に音がありませんでした");
+    // 待っている間に提案が閉じられたり、新しい生成で置き換わったりしていたら、結果は捨てる
+    const now = project.tracks[id];
+    if (now !== t || !(t.alts ?? (t.ghost ? [t.ghost] : [])).includes(g)) {
+      setStatus("提案が閉じられたため、届いた修正案は使いませんでした");
+      return;
+    }
+    // 変えた音は、高さ・位置だけでなく長さ・強さも比べる（長さだけ伸ばす修正も拾うため）。
+    // 消した音は、同じ高さ・位置の音が修正案にないもの
+    const before = new Set(source.map(noteSignature)), after = new Set(r.notes.map(noteKey));
+    const changed = r.notes.filter((n) => !before.has(noteSignature(n))).map(noteKey);
+    const removed = source.filter((n) => !after.has(noteKey(n)));
+    if (!changed.length && !removed.length) { setStatus(`AI は直すところがないと判断しました。${r.summary}`); return; }
+    const alts = (t.alts ??= [g]);
+    const root = g.revision?.root ?? g.label;
+    const k = alts.filter((a) => a.revision?.root === root).length;
+    const label = `${root}′${k ? k + 1 : ""}`;
+    const rev: Ghost = {
+      ...g,
+      notes: r.notes,
+      conf: r.notes.map(() => 0.9),
+      label,
+      spec: { ...g.spec, title: instruction },
+      explanation: "",
+      proposed: r.notes.length,
+      accepted: 0,
+      revision: { instruction, from: g.label, root, summary: r.summary, changes: r.changes, changed, removed },
+    };
+    alts.push(rememberOriginal(rev));
+    if (project.log[g.logIndex]) project.log[g.logIndex].titles = [...(project.log[g.logIndex].titles ?? []), `${label}: ${instruction}（AI の修正案）`];
+    reviseInput.value = "";
+    showAlt(id, alts.length - 1);
+    setStatus(`案${label}を出しました。変えた音は太い枠、消した音は灰色の点線です`);
+  } catch (e) {
+    setStatus(`修正案を作れませんでした: ${(e as Error).message}`, true);
+  } finally {
+    revising = false;
+    renderReviseBusy();
+  }
+}
+function renderReviseBusy() {
+  reviseBtn.disabled = revising;
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-revise]")) b.disabled = revising;
+  reviseBtn.lastChild!.textContent = revising ? "考え中…" : "修正案";
+}
+reviseBtn.onclick = () => void reviseCurrent(reviseInput.value);
+reviseInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); void reviseCurrent(reviseInput.value); } });
+for (const b of document.querySelectorAll<HTMLButtonElement>("[data-revise]")) b.onclick = () => { reviseInput.value = b.dataset.revise!; void reviseCurrent(b.dataset.revise!); };
+
+/** AI が直した版のとき、何をなぜ変えたかを表示する */
+function renderRevisionNotes(g: Ghost) {
+  const box = $("revisionNotes");
+  const rv = g.revision;
+  box.hidden = !rv;
+  if (!rv) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="revision-head">案${esc(g.label)}：案${esc(rv.from)}を「${esc(rv.instruction)}」で直した版</div>
+    ${rv.summary ? `<p>${esc(rv.summary)}</p>` : ""}
+    <ol class="revision-changes">${rv.changes.map((c) => `<li><div><b>${esc(c.where)}</b>　${esc(c.what)}</div><div class="why">${esc(c.why)}</div></li>`).join("")}</ol>
+    <p class="hint"><span class="rv-key rv-changed"></span>太い枠＝変えた・足した音　<span class="rv-key rv-removed"></span>灰色の点線＝消した音（案${esc(rv.from)}にあった音）</p>`;
+}
 
 document.addEventListener("keydown", (e) => {
   if ((e.target as HTMLElement).closest("input, textarea, select")) return;
