@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>試聴比較 · Ghostnotes</title><link rel="stylesheet" href="./style.css"></head>
+<body><header><a class="brand" href="./">Ghostnotes <span>試聴比較</span></a><button id="export">評価を書き出す</button></header>
+<main>
+ <aside><h1>音を聴いて比べる</h1><label for="experiment">比較するもの</label><select id="experiment"><option value="models">採譜モデル</option><option value="transcription">採譜方法</option><option value="prompt">生成のプロンプト</option></select><label id="settingLabel" for="model">採譜経路</label><select id="model"></select><nav id="trials" aria-label="比較する音源"></nav><p id="progress" class="muted"></p></aside>
+ <div class="work">
+  <div class="title-row"><h2 id="trialTitle">音源を読み込んでいます</h2><button id="next" disabled>次の比較へ</button></div>
+  <p id="trialHint" class="muted"></p>
+  <section class="listening" aria-label="試聴">
+   <div id="variants" class="variants" role="group" aria-label="聴く音"></div>
+   <div class="transport"><button id="play" class="primary" disabled>再生</button><output id="time">0:00 / 0:20</output><label class="toggle"><input id="normalize" type="checkbox" checked>音量をそろえる</label></div>
+   <canvas id="wave" height="100" aria-hidden="true"></canvas>
+   <label class="sr-only" for="seek">再生位置</label><input id="seek" class="seek" type="range" min="0" max="20" step="0.01" value="0">
+   <div class="loop"><label class="toggle"><input id="loop" type="checkbox" checked>区間を繰り返す</label><label>開始 <input id="loopStart" type="number" min="0" max="20" step="0.1" value="0"> 秒</label><label>終了 <input id="loopEnd" type="number" min="0.1" max="20" step="0.1" value="20"> 秒</label></div>
+   <p id="audioStatus" role="status" class="muted"></p>
+  </section>
+  <section class="evaluation" aria-labelledby="evalTitle"><h2 id="evalTitle">原音に近いのは？</h2><form id="rating"><fieldset id="winner"><legend class="sr-only">比較した結果</legend></fieldset><label for="comment">気づいたこと</label><textarea id="comment" rows="3" placeholder="音程、リズム、余計な音など"></textarea><p id="saved" role="status" class="muted">評価はこのブラウザに保存されます</p></form></section>
+  <details id="conditions"><summary>条件を見る</summary><div id="conditionBody"></div></details>
+  <div class="foot"><button id="shuffle">音の並びを変える</button><span class="muted">Space 再生・停止 / 1〜6 音の切り替え</span></div>
+ </div>
+</main><script type="module" src="./app.js"></script></body></html>

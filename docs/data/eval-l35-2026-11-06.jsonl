@@ -1,0 +1,9 @@
+{"name":"l35plain_flute_A100","model":"lyria-3.5","style":"plain","bpm":100,"root":"C","genMs":16079,"durationSec":58.5,"estBpm":103.4,"beatStdMs":18.7,"inScale":0.933,"rawNotes":119,"maxPoly":3}
+{"name":"l35ts_flute_A100","model":"lyria-3.5","style":"ts","bpm":100,"root":"C","genMs":19544,"durationSec":58,"estBpm":99.4,"beatStdMs":22.5,"inScale":1,"rawNotes":217,"maxPoly":6}
+{"name":"clip_flute_A100","model":"lyria-3-clip-preview","style":"plain","bpm":100,"root":"C","genMs":19425,"durationSec":28.5,"estBpm":152,"beatStdMs":19.9,"inScale":0.784,"rawNotes":37,"maxPoly":2}
+{"name":"l35plain_ocarina_D110","model":"lyria-3.5","style":"plain","bpm":110,"root":"F","genMs":21039,"durationSec":63.4,"estBpm":112.3,"beatStdMs":37.9,"inScale":0.824,"rawNotes":153,"maxPoly":3}
+{"name":"clip_ocarina_D110","model":"lyria-3-clip-preview","style":"plain","bpm":110,"root":"F","genMs":14755,"durationSec":29.6,"estBpm":112.3,"beatStdMs":16,"inScale":0.971,"rawNotes":103,"maxPoly":3}
+{"name":"l35ts_ocarina_D110","model":"lyria-3.5","style":"ts","bpm":110,"root":"F","genMs":12367,"durationSec":58.7,"estBpm":107.7,"beatStdMs":35.2,"inScale":0.923,"rawNotes":104,"maxPoly":3}
+{"name":"l35ts_bass_G120","model":"lyria-3.5","style":"ts","bpm":120,"root":"G","genMs":15093,"durationSec":62.8,"estBpm":123,"beatStdMs":8.8,"inScale":0.613,"rawNotes":419,"maxPoly":7}
+{"name":"l35plain_bass_G120","model":"lyria-3.5","style":"plain","bpm":120,"root":"G","genMs":9594,"durationSec":64.7,"estBpm":123,"beatStdMs":9.9,"inScale":1,"rawNotes":152,"maxPoly":2}
+{"name":"clip_bass_G120","model":"lyria-3-clip-preview","style":"plain","bpm":120,"root":"G","genMs":10923,"durationSec":30.7,"estBpm":117.5,"beatStdMs":11.6,"inScale":0.797,"rawNotes":59,"maxPoly":2}

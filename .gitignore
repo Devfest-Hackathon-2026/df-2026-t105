@@ -32,3 +32,11 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 *.log
+
+# Local development and agent context
+*.local
+.impeccable/
+AGENTS.md
+CLAUDE.md
+DESIGN.md
+PRODUCT.md

@@ -1,0 +1,1 @@
+export function selectAlignedWindow(notes:{start:number;end:number;pitch?:number}[],o:{bpm:number;bars:number;audioDuration:number;firstDownbeat?:number;onsetDelay?:number;beatGrid?:import('../muscriptor').BeatGrid|null}):{startSec:number;endSec:number;sourceBpm:number;onsetDelay:number;subdivision:number|null;windowBeats:number[]|null;completeAudio:boolean};
