@@ -7,7 +7,7 @@ import { parseTranscription } from "./transcription.mjs";
 // - POST /api/music/:model        : Lyria 3.5 / 3 Pro / 3 Clip で作曲し、{ audio, mime, text, model } を返す
 // - WS   /ws/...BidiGenerateMusic : Lyria RealTime の WebSocket を中継する（AI Studio のキーがあるときだけ）
 // - POST /api/transcribe?instruments=drums : 音声（WAV）を muscriptor のサーバー（MUSCRIPTOR_URL）で採譜し、{ events } を返す
-// Lyria RealTime は短時間トークン（ephemeral token）を受け付けないため、中継が必要になる（docs/経緯と設計.md 8章）。
+// Lyria RealTime は短時間トークン（ephemeral token）を受け付けないため、中継が必要になる。
 //
 // 呼び出し先は2通り。
 // - AI Studio（GEMINI_API_KEY）: generativelanguage.googleapis.com。Lyria 3.5 と RealTime が使える
