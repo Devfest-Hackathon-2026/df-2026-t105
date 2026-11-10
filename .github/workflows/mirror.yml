@@ -1,0 +1,34 @@
+# main が更新されたら、提出用リポジトリ（Devfest-Hackathon-2026/df-2026-t105）の main にも push する。
+# Secret SUBMISSION_REPO_TOKEN に、提出用リポジトリへ書き込める PAT を登録しておく
+# （classic なら repo と workflow、fine-grained なら Contents と Workflows の Read and write）。
+name: Mirror to submission repository
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-submission
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    if: github.repository == 'yi7242/ghostnotes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Push to submission repository
+        env:
+          TOKEN: ${{ secrets.SUBMISSION_REPO_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "::error::Secret SUBMISSION_REPO_TOKEN が未設定です"; exit 1; fi
+          # 早送りできないとき（提出用リポジトリ側にだけコミットがあるとき）は失敗させ、上書きはしない
+          git push "https://x-access-token:${TOKEN}@github.com/Devfest-Hackathon-2026/df-2026-t105.git" "HEAD:refs/heads/main"

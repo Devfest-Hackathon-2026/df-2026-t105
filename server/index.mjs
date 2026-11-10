@@ -12,9 +12,11 @@ import { parseTranscription } from "./transcription.mjs";
 // 呼び出し先は2通り。
 // - AI Studio（GEMINI_API_KEY）: generativelanguage.googleapis.com。Lyria 3.5 と RealTime が使える
 // - Vertex AI / Agent Platform（VERTEX_PROJECT）: aiplatform.googleapis.com。ハッカソンの GCP クレジットはこちらに使える。
-//   Lyria は 3 Pro と 3 Clip（interactions API）。認証は Cloud Run ならサービスアカウント、手元なら gcloud のトークン
+//   Lyria は 3 Pro と 3 Clip（generateContent）。認証は Cloud Run ならサービスアカウント、手元なら gcloud のトークン
 // 両方を設定したときは、作曲と Gemini は Vertex、RealTime は AI Studio を使う。
+// APP_PASSWORD を設定すると、/healthz 以外のすべての要求に Basic 認証を求める（ユーザー名は何でもよい）。
 import http from "node:http";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,10 +29,22 @@ const VERTEX_LOCATION = process.env.VERTEX_LOCATION ?? "global";
 // Vertex で使う Gemini のモデル（AI Studio の gemini-flash-latest のような別名は Vertex にはない）
 const VERTEX_GEMINI_MODEL = process.env.VERTEX_GEMINI_MODEL ?? "gemini-3-flash-preview";
 if (!KEY && !VERTEX_PROJECT) {
-  console.error("GEMINI_API_KEY か VERTEX_PROJECT のどちらかを設定してください");
+  console.error("VERTEX_PROJECT（Vertex AI のプロジェクト ID）を設定してください");
   process.exit(1);
 }
 const BACKEND = VERTEX_PROJECT ? "vertex" : "aistudio";
+// サイト全体のパスワード（Basic 認証）。未設定なら認証しない
+const APP_PASSWORD = process.env.APP_PASSWORD ?? "";
+const digest = (s) => createHash("sha256").update(s).digest();
+function authorized(req) {
+  if (!APP_PASSWORD) return true;
+  const m = /^Basic\s+(\S+)$/i.exec(req.headers.authorization ?? "");
+  if (!m) return false;
+  const decoded = Buffer.from(m[1], "base64").toString("utf8");
+  const pass = decoded.slice(decoded.indexOf(":") + 1);
+  return timingSafeEqual(digest(pass), digest(APP_PASSWORD));
+}
+const AUTH_CHALLENGE = { "WWW-Authenticate": 'Basic realm="Ghostnotes", charset="UTF-8"', "Content-Type": "text/plain; charset=utf-8" };
 // muscriptor のサーバー（`muscriptor serve`）。設定されていれば、ドラムなどの耳コピに使う
 const MUSCRIPTOR_URL = process.env.MUSCRIPTOR_URL ?? "http://127.0.0.1:8222";
 const MUSCRIPTOR_A100_URL = process.env.MUSCRIPTOR_A100_URL ?? "http://127.0.0.1:8223";
@@ -204,6 +218,7 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://x");
     if (url.pathname === "/healthz") { res.writeHead(200).end("ok"); return; }
+    if (!authorized(req)) { res.writeHead(401, AUTH_CHALLENGE).end("パスワードが必要です"); return; }
     if (url.pathname === "/api/config") {
       const [cpu, a100] = await Promise.all([transcriberHealth(MUSCRIPTOR_URL), transcriberHealth(MUSCRIPTOR_A100_URL)]);
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({
@@ -251,6 +266,7 @@ server.on("upgrade", (req, socket, head) => {
   // "//ws/..." を new URL に渡すとホスト名として解釈されるので、パスは文字列のまま切り出す
   const m = MUSIC_PATH.exec((req.url ?? "").split("?")[0]);
   const ip = clientIp(req);
+  if (!authorized(req)) { socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n"); socket.destroy(); return; }
   if (!m || !KEY) { socket.destroy(); return; }
   if ((open.get(ip) ?? 0) >= 4 || !allow(ip, "music")) {
     socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");

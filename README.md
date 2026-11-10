@@ -4,7 +4,7 @@ AIが生成したフレーズを聴き比べ，使いたい音を選んで曲に
 
 [アプリを開く](https://ghostnotes-1007513721749.asia-northeast1.run.app/) · [デモを試す](https://ghostnotes-1007513721749.asia-northeast1.run.app/?demo)
 
-公開版はAPIキーの入力が不要．デモでは事前生成した2案を読み込み，生成APIを呼ばずに採用・編集・書き出しを試せる．
+公開版はパスワードで保護している．パスワードはチームから受け取る．APIキーの入力は不要．デモでは事前生成した2案を読み込み，生成APIを呼ばずに採用・編集・書き出しを試せる．
 
 ## メンバー
 
@@ -37,7 +37,7 @@ MuScriptorを起動していない環境では，ブラウザ側のBasic Pitch�
 
 ## ローカルへの導入
 
-Node.js 22系の新しいバージョンとnpm，Gemini APIのキーを用意する．キーは中継サーバーが持ち，画面のAPIキー欄は空のまま使う．
+Node.js 22系の新しいバージョンとnpm，Vertex AIを有効にしたGCPプロジェクトとgcloud CLIを用意する．中継サーバーは `gcloud auth print-access-token` で得たトークンでVertex AIを呼ぶので，先に `gcloud auth login` を済ませる．画面のAPIキー欄は空のまま使う．
 
 ```bash
 git clone https://github.com/Devfest-Hackathon-2026/df-2026-t105.git
@@ -46,10 +46,10 @@ npm ci
 cp .env.example .env
 ```
 
-`.env` にキーを設定する．Gemini APIを使う場合，`VERTEX_PROJECT` は設定しない．
+`.env` にプロジェクトIDを設定する．`APP_PASSWORD` を設定すると，手元でもパスワードを求める．
 
 ```dotenv
-GEMINI_API_KEY=your_api_key
+VERTEX_PROJECT=your_project_id
 ```
 
 ターミナルを2つ開き，それぞれ起動する．
@@ -79,31 +79,46 @@ npm run server
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/deployment-dark.png">
-  <img src="docs/images/deployment.png" alt="Ghostnotesのデプロイ構成．GitHubのmainからgcloudでCloud Buildへソースを送り，Artifact Registry経由でCloud Runへデプロイする．ブラウザはCloud Runへ接続し，Cloud RunはSecret Managerのキーを使ってGemini APIを呼ぶ．">
+  <img src="docs/images/deployment.png" alt="Ghostnotesのデプロイ構成．開発リポジトリのmainが更新されると，GitHub ActionsがWorkload Identity FederationでGoogle Cloudに入り，Cloud BuildとArtifact Registryを経てCloud Runへデプロイし，提出用リポジトリにもpushする．ブラウザはBasic認証でCloud Runに接続し，Cloud Runは実行用サービスアカウントでVertex AIのGeminiとLyriaを呼ぶ．パスワードはSecret Managerから渡す．">
 </picture>
 
-実線は実行時の通信，破線は手動で行うビルド・デプロイを示す．[図のHTMLソース](docs/images/deployment.html)も参照できる．
+青の実線は実行時の通信，灰色の実線はシークレットの供給，破線はGitHub ActionsによるCI/CDを示す．[図のHTMLソース](docs/images/deployment.html)も参照できる．
 
-画面と中継サーバーを1つのコンテナにまとめる．Dockerfileを基にCloud Buildでビルドし，Gemini APIキーはSecret Managerから実行時に渡す．
+画面と中継サーバーを1つのコンテナにまとめる．公開版はGemini API（AI Studio）を使わず，Vertex AIだけでGeminiとLyriaを呼ぶ．Vertexへは実行用サービスアカウントの権限で接続するため，APIキーは持たない．Vertexでは Lyria 3.5 と RealTime が使えないので，「Lyria 3.5」を選ぶと Lyria 3 Pro で生成する．
 
-GCPプロジェクトとgcloudの認証を用意し，[公開手順](docs/公開手順.md)に従ってAPIの有効化，シークレットの登録，実行用サービスアカウントへの読み取り権限の付与を済ませる．gcloudはローカル版でもDocker版でも使える．ソースからのデプロイに必要な権限は [Google Cloudの公式手順](https://docs.cloud.google.com/run/docs/deploying-source-code)を参照．
+サイトにはパスワード（Basic認証）をかける．パスワードはSecret Managerの `ghostnotes-app-password` に置き，実行時に環境変数 `APP_PASSWORD` として渡す．ブラウザで開くとパスワードを聞かれる．ユーザー名は何でもよい．
 
-リポジトリのルートで実行する．`YOUR_PROJECT_ID` はデプロイ先のプロジェクトIDに置き換える．
+### GitHub Actions
+
+`main` が更新されると，次の2つのワークフローが動く．
+
+| ワークフロー | 内容 |
+|---|---|
+| [Deploy to Cloud Run](.github/workflows/deploy.yml) | テストとビルドのあと，`dev-fast-deadline-driven` のCloud Runへデプロイし，`/healthz` と認証が効いていることを確かめる．GCPへはWorkload Identity Federationで入る |
+| [Mirror to submission repository](.github/workflows/mirror.yml) | 提出用リポジトリ（[Devfest-Hackathon-2026/df-2026-t105](https://github.com/Devfest-Hackathon-2026/df-2026-t105)）の `main` にpushする．早送りできないときは上書きせずに失敗する |
+
+最初に1回だけ，GCPとGitHubの準備をする．
+
+1. GCP：プロジェクトのオーナー権限を持つアカウントで `APP_PASSWORD=<サイトのパスワード> sh scripts/setup-gcp-ci.sh` を実行する．パスワードのシークレット，デプロイ用サービスアカウント `ghostnotes-deployer`，GitHub用のWorkload Identity Federationを作る．パスワードを変えるときも同じコマンドを実行し，そのあとデプロイし直す．
+2. GitHub：`yi7242/ghostnotes` のSecretに `SUBMISSION_REPO_TOKEN` を登録する．提出用リポジトリへ書き込めるPAT（classicなら `repo` と `workflow`，fine-grainedなら Contents と Workflows の Read and write）を使う．
+
+### 手動でデプロイする
+
+リポジトリのルートで実行する．gcloudはローカル版でもDocker版でも使える．
 
 ```bash
 gcloud run deploy ghostnotes \
-  --project YOUR_PROJECT_ID \
-  --source . \
+  --project dev-fast-deadline-driven \
   --region asia-northeast1 \
-  --allow-unauthenticated \
-  --update-secrets GEMINI_API_KEY=gemini-api-key:latest \
-  --remove-env-vars VERTEX_PROJECT,VERTEX_LOCATION,VERTEX_GEMINI_MODEL \
+  --source . \
+  --service-account ghostnotes-runtime@dev-fast-deadline-driven.iam.gserviceaccount.com \
+  --build-service-account projects/dev-fast-deadline-driven/serviceAccounts/ghostnotes-build@dev-fast-deadline-driven.iam.gserviceaccount.com \
+  --set-env-vars VERTEX_PROJECT=dev-fast-deadline-driven,VERTEX_LOCATION=global \
+  --set-secrets APP_PASSWORD=ghostnotes-app-password:latest \
   --timeout 300 --max-instances 2 --memory 512Mi
 ```
 
-Docker版gcloudでは，リポジトリをコンテナへマウントするかコピーし，そのディレクトリで同じコマンドを実行する．ビルド用・実行用に独自のサービスアカウントを使う場合は，`--build-service-account` と `--service-account` も指定する．
-
-デプロイ後は表示されたURLを開く．`/api/config` の `backend` が `aistudio` ならGemini APIを使う設定になっている．画面から生成し，音声と採譜結果が届くかを確認する．`--allow-unauthenticated` を指定したサイトには，ログインせずにアクセスできる．
+`--set-env-vars` と `--set-secrets` は既存の値を置き換えるので，以前の `GEMINI_API_KEY` はここで外れる．デプロイ後にパスワードを入れて `/api/config` を開き，`backend` が `vertex` になっていれば，Vertex AIを使う設定になっている．
 
 ## 検証と関連資料
 

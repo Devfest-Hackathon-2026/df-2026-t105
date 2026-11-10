@@ -1,0 +1,68 @@
+# main が更新されたら Cloud Run（dev-fast-deadline-driven）へデプロイする。
+# GCP へは Workload Identity Federation で入る（サービスアカウントの鍵は使わない）。準備は scripts/setup-gcp-ci.sh。
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: dev-fast-deadline-driven
+  PROJECT_NUMBER: "1007513721749"
+  REGION: asia-northeast1
+  SERVICE: ghostnotes
+
+jobs:
+  deploy:
+    # 提出用リポジトリへ複製されたときは動かさない
+    if: github.repository == 'yi7242/ghostnotes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/github
+          service_account: ghostnotes-deployer@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # Gemini API（AI Studio）は使わず、Vertex AI だけで動かす。
+      # --set-env-vars / --set-secrets は既存の値を置き換えるので、GEMINI_API_KEY はここで外れる。
+      - name: Deploy
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --source . \
+            --service-account "ghostnotes-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --build-service-account "projects/${PROJECT_ID}/serviceAccounts/ghostnotes-build@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --set-env-vars "VERTEX_PROJECT=${PROJECT_ID},VERTEX_LOCATION=global" \
+            --set-secrets "APP_PASSWORD=ghostnotes-app-password:latest" \
+            --timeout 300 --max-instances 2 --memory 512Mi \
+            --quiet
+
+      - name: Smoke test
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format 'value(status.url)')
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/healthz")" = 200
+          # パスワードなしでは開けないこと
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/config")" = 401
