@@ -77,6 +77,13 @@ npm run server
 
 ## Cloud Runへのデプロイ
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/deployment-dark.png">
+  <img src="docs/images/deployment.png" alt="Ghostnotesのデプロイ構成．GitHubのmainからgcloudでCloud Buildへソースを送り，Artifact Registry経由でCloud Runへデプロイする．ブラウザはCloud Runへ接続し，Cloud RunはSecret Managerのキーを使ってGemini APIを呼ぶ．">
+</picture>
+
+実線は実行時の通信，破線は手動で行うビルド・デプロイを示す．[図のHTMLソース](docs/images/deployment.html)も参照できる．
+
 画面と中継サーバーを1つのコンテナにまとめる．Dockerfileを基にCloud Buildでビルドし，Gemini APIキーはSecret Managerから実行時に渡す．
 
 GCPプロジェクトとgcloudの認証を用意し，[公開手順](docs/公開手順.md)に従ってAPIの有効化，シークレットの登録，実行用サービスアカウントへの読み取り権限の付与を済ませる．gcloudはローカル版でもDocker版でも使える．ソースからのデプロイに必要な権限は [Google Cloudの公式手順](https://docs.cloud.google.com/run/docs/deploying-source-code)を参照．
