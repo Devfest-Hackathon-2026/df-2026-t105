@@ -63,6 +63,8 @@ jobs:
       - name: Smoke test
         run: |
           URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format 'value(status.url)')
-          test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/healthz")" = 200
-          # パスワードなしでは開けないこと
-          test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/config")" = 401
+          check() { code=$(curl -s -o /dev/null -w '%{http_code}' "$URL$1"); echo "$1 -> $code (expected $2)"; test "$code" = "$2"; }
+          check /health 200
+          # パスワードなしでは 401。403 なら Cloud Run の allUsers（roles/run.invoker）が外れている
+          check / 401
+          check /api/config 401

@@ -14,7 +14,7 @@ import { parseTranscription } from "./transcription.mjs";
 // - Vertex AI / Agent Platform（VERTEX_PROJECT）: aiplatform.googleapis.com。ハッカソンの GCP クレジットはこちらに使える。
 //   Lyria は 3 Pro と 3 Clip（generateContent）。認証は Cloud Run ならサービスアカウント、手元なら gcloud のトークン
 // 両方を設定したときは、作曲と Gemini は Vertex、RealTime は AI Studio を使う。
-// APP_PASSWORD を設定すると、/healthz 以外のすべての要求に Basic 認証を求める（ユーザー名は何でもよい）。
+// APP_PASSWORD を設定すると、/health と /healthz 以外のすべての要求に Basic 認証を求める（ユーザー名は何でもよい）。
 import http from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
@@ -217,7 +217,8 @@ async function transcribeWithMuscriptor(req, res, url) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://x");
-    if (url.pathname === "/healthz") { res.writeHead(200).end("ok"); return; }
+    // Cloud Run は /healthz を予約していて届かないので、/health も受け付ける
+    if (url.pathname === "/healthz" || url.pathname === "/health") { res.writeHead(200).end("ok"); return; }
     if (!authorized(req)) { res.writeHead(401, AUTH_CHALLENGE).end("パスワードが必要です"); return; }
     if (url.pathname === "/api/config") {
       const [cpu, a100] = await Promise.all([transcriberHealth(MUSCRIPTOR_URL), transcriberHealth(MUSCRIPTOR_A100_URL)]);
