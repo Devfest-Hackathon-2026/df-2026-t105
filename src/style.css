@@ -318,6 +318,22 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .spec .params { color: var(--muted); font-size: 12px; margin-top: 6px; font-variant-numeric: tabular-nums; }
 .spec p { margin: 6px 0 0; }
 .explain { white-space: pre-wrap; font: inherit; margin: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.revise { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.revise > label { font-size: 13px; font-weight: 600; }
+.revise-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.revise .chip { padding: 2px 9px; font-size: 12px; border-radius: 999px; color: var(--ghost); border-color: var(--ghost-soft); background: var(--ghost-soft); }
+.revise .chip:hover:not(:disabled) { border-color: var(--ghost); background: var(--ghost-soft); }
+.revise-row { display: flex; gap: 6px; }
+.revise-row input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.revise-row button { color: var(--ghost); border-color: var(--ghost); font-weight: 600; white-space: nowrap; }
+.revision-notes { padding: 10px 12px; border: 1px solid var(--ghost); border-radius: 10px; background: var(--ghost-soft); }
+.revision-notes p { margin: 4px 0; }
+.revision-head { font-weight: 700; color: var(--ghost); font-size: 13px; }
+.revision-changes { margin: 6px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.revision-changes .why { color: var(--muted); font-size: 12.5px; }
+.rv-key { display: inline-block; width: 16px; height: 9px; border-radius: 3px; vertical-align: middle; margin-right: 3px; }
+.rv-changed { border: 3px solid var(--ghost); }
+.rv-removed { border: 1.2px dashed var(--muted); }
 .slider { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; }
 .slider input { flex: 1; }
 .log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }

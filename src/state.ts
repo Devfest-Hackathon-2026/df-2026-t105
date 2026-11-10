@@ -32,6 +32,16 @@ export type Ghost = {
   label: string;
   proposed: number;
   accepted: number;
+  /** AI に言葉で直してもらった版のとき、その内容。changed は AI が変えた・足した音、removed は消した音 */
+  revision?: {
+    instruction: string;
+    from: string;
+    root: string;
+    summary: string;
+    changes: { where: string; what: string; why: string }[];
+    changed: string[];
+    removed: Note[];
+  };
   /** 届いた時点の提案。案のカードを押したときに、ここから提案の音を戻す */
   original?: { notes: Note[]; conf: number[]; startSec: number; ampRatio: number };
 };
@@ -260,3 +270,8 @@ export function trackRange(p: Project, id: TrackId): [number,number] {
   const fallback = RANGE[trackRole(p,id)];
   return notes.length ? [Math.max(0,Math.min(fallback[0],...notes.map((n)=>n.pitch))-2),Math.min(127,Math.max(fallback[1],...notes.map((n)=>n.pitch))+2)] : fallback;
 }
+
+/** 音の同一性を見るためのキー（高さと位置） */
+export const noteKey = (n: Note) => `${n.pitch}@${n.step.toFixed(3)}`;
+/** 音の中身すべて（高さ・位置・長さ・強さ）を比べるためのキー */
+export const noteSignature = (n: Note) => `${noteKey(n)}|${n.len.toFixed(3)}|${n.vel.toFixed(2)}`;
