@@ -14,9 +14,9 @@ import { parseTranscription } from "./transcription.mjs";
 // - Vertex AI / Agent Platform（VERTEX_PROJECT）: aiplatform.googleapis.com。ハッカソンの GCP クレジットはこちらに使える。
 //   Lyria は 3 Pro と 3 Clip（generateContent）。認証は Cloud Run ならサービスアカウント、手元なら gcloud のトークン
 // 両方を設定したときは、作曲と Gemini は Vertex、RealTime は AI Studio を使う。
-// APP_PASSWORD を設定すると、/health と /healthz 以外のすべての要求に Basic 認証を求める（ユーザー名は何でもよい）。
+// APP_PASSWORD を設定すると、パスワードだけのログイン画面（/login）を出し、通るまで /health 以外を開けない（server/auth.mjs）。
 import http from "node:http";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { COOKIE, clearCookie, issueToken, loginPage, passwordMatches, readCookie, safeNext, sessionCookie, tokenValid } from "./auth.mjs";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,18 +33,10 @@ if (!KEY && !VERTEX_PROJECT) {
   process.exit(1);
 }
 const BACKEND = VERTEX_PROJECT ? "vertex" : "aistudio";
-// サイト全体のパスワード（Basic 認証）。未設定なら認証しない
+// サイト全体のパスワード。未設定なら認証しない
 const APP_PASSWORD = process.env.APP_PASSWORD ?? "";
-const digest = (s) => createHash("sha256").update(s).digest();
-function authorized(req) {
-  if (!APP_PASSWORD) return true;
-  const m = /^Basic\s+(\S+)$/i.exec(req.headers.authorization ?? "");
-  if (!m) return false;
-  const decoded = Buffer.from(m[1], "base64").toString("utf8");
-  const pass = decoded.slice(decoded.indexOf(":") + 1);
-  return timingSafeEqual(digest(pass), digest(APP_PASSWORD));
-}
-const AUTH_CHALLENGE = { "WWW-Authenticate": 'Basic realm="Ghostnotes", charset="UTF-8"', "Content-Type": "text/plain; charset=utf-8" };
+const authorized = (req) => !APP_PASSWORD || tokenValid(APP_PASSWORD, readCookie(req, COOKIE));
+const isHttps = (req) => req.headers["x-forwarded-proto"] === "https";
 // muscriptor のサーバー（`muscriptor serve`）。設定されていれば、ドラムなどの耳コピに使う
 const MUSCRIPTOR_URL = process.env.MUSCRIPTOR_URL ?? "http://127.0.0.1:8222";
 const MUSCRIPTOR_A100_URL = process.env.MUSCRIPTOR_A100_URL ?? "http://127.0.0.1:8223";
@@ -63,7 +55,7 @@ const MAX_MUSIC_SEC = 60;
 
 // IP ごとの簡易な回数制限（Cloud Run のインスタンス内だけで数える）
 const WINDOW_MS = 10 * 60 * 1000;
-const LIMITS = { gemini: 60, music: 15, compose: 20, transcribe: 40 };
+const LIMITS = { gemini: 60, music: 15, compose: 20, transcribe: 40, login: 20 };
 const hits = new Map();
 function allow(ip, kind) {
   const now = Date.now();
@@ -99,6 +91,29 @@ async function serveStatic(req, res) {
   } catch {
     res.writeHead(404).end("not found");
   }
+}
+
+/** パスワードだけのログイン画面。GET で画面を返し、POST で照合して Cookie を渡す */
+async function handleLogin(req, res, url) {
+  const html = (status, body, headers = {}) => res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...headers }).end(body);
+  if (url.pathname === "/logout") { res.writeHead(303, { Location: "/login", "Set-Cookie": clearCookie(isHttps(req)) }).end(); return; }
+  if (req.method === "GET" || req.method === "HEAD") {
+    const next = safeNext(url.searchParams.get("next"));
+    if (!APP_PASSWORD || authorized(req)) { res.writeHead(303, { Location: next }).end(); return; }
+    html(200, loginPage({ next }));
+    return;
+  }
+  if (req.method !== "POST") { res.writeHead(405).end(); return; }
+  const body = await readBody(req, 4096);
+  if (!body) { res.writeHead(413).end(); return; }
+  const form = new URLSearchParams(body.toString());
+  const next = safeNext(form.get("next"));
+  if (!allow(clientIp(req), "login")) { html(429, loginPage({ next, error: "試行回数が多すぎます．しばらく待ってからもう一度試してください" })); return; }
+  if (!APP_PASSWORD || passwordMatches(APP_PASSWORD, form.get("password") ?? "")) {
+    res.writeHead(303, { Location: next, "Set-Cookie": sessionCookie(issueToken(APP_PASSWORD), isHttps(req)), "Cache-Control": "no-store" }).end();
+    return;
+  }
+  html(401, loginPage({ next, error: "パスワードが違います" }));
 }
 
 async function readBody(req, limit) {
@@ -219,7 +234,16 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     // Cloud Run は /healthz を予約していて届かないので、/health も受け付ける
     if (url.pathname === "/healthz" || url.pathname === "/health") { res.writeHead(200).end("ok"); return; }
-    if (!authorized(req)) { res.writeHead(401, AUTH_CHALLENGE).end("パスワードが必要です"); return; }
+    if (url.pathname === "/login" || url.pathname === "/logout") return await handleLogin(req, res, url);
+    if (!authorized(req)) {
+      // 画面はログイン画面へ回し、API は 401 を返す
+      if ((req.method === "GET" || req.method === "HEAD") && !url.pathname.startsWith("/api/")) {
+        res.writeHead(303, { Location: `/login?next=${encodeURIComponent(url.pathname + url.search)}`, "Cache-Control": "no-store" }).end();
+      } else {
+        res.writeHead(401, { "Content-Type": "text/plain; charset=utf-8" }).end("ログインが必要です");
+      }
+      return;
+    }
     if (url.pathname === "/api/config") {
       const [cpu, a100] = await Promise.all([transcriberHealth(MUSCRIPTOR_URL), transcriberHealth(MUSCRIPTOR_A100_URL)]);
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({

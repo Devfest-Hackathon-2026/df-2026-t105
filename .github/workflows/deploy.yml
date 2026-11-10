@@ -65,6 +65,8 @@ jobs:
           URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format 'value(status.url)')
           check() { code=$(curl -s -o /dev/null -w '%{http_code}' "$URL$1"); echo "$1 -> $code (expected $2)"; test "$code" = "$2"; }
           check /health 200
-          # パスワードなしでは 401。403 なら Cloud Run の allUsers（roles/run.invoker）が外れている
-          check / 401
+          # ログインしていなければ、画面はログイン画面へ回され（303）、API は 401。
+          # 403 なら Cloud Run の allUsers（roles/run.invoker）が外れている
+          check /login 200
+          check / 303
           check /api/config 401
