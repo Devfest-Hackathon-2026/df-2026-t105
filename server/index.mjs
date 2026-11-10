@@ -146,7 +146,10 @@ async function proxyGemini(req, res, model) {
   res.end(Buffer.from(await r.arrayBuffer()));
 }
 
-/** 作曲。AI Studio / Vertex ともに generateContent で呼び、{ audio(base64), mime, text, model } にそろえて返す */
+/**
+ * 作曲。AI Studio は generateContent、Vertex は interactions API（Vertex の Lyria 3 Pro / Clip は generateContent に対応していない）。
+ * どちらも { audio(base64), mime, text, model } にそろえて返す
+ */
 async function compose(req, res, requested) {
   const model = MUSIC_MODELS[requested];
   if (!model) { res.writeHead(400).end("model not allowed"); return; }
@@ -155,23 +158,56 @@ async function compose(req, res, requested) {
   if (!body) { res.writeHead(413).end("too large"); return; }
   const { prompt } = JSON.parse(body.toString());
   if (typeof prompt !== "string" || !prompt.trim()) { res.writeHead(400).end("prompt required"); return; }
-  const url = BACKEND === "vertex"
-    ? `${vertexBase()}/publishers/google/models/${model}:generateContent`
-    : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  const headers = BACKEND === "vertex"
-    ? { "Content-Type": "application/json", Authorization: `Bearer ${await vertexToken()}` }
-    : { "Content-Type": "application/json", "x-goog-api-key": KEY };
-  const r = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["AUDIO", "TEXT"] } }),
-  });
-  if (!r.ok) { res.writeHead(r.status, { "Content-Type": "text/plain" }).end((await r.text()).slice(0, 500)); return; }
-  const j = await r.json();
-  const parts = j.candidates?.[0]?.content?.parts ?? [];
-  const audio = parts.find((p) => p.inlineData?.data);
-  const out = { audio: audio?.inlineData.data ?? null, mime: audio?.inlineData.mimeType ?? null, text: parts.filter((p) => p.text).map((p) => p.text).join("\n"), model: j.modelVersion ?? model };
+  let out;
+  if (BACKEND === "vertex") {
+    const headers = { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${await vertexToken()}` };
+    const r = await fetch(`${vertexBase()}/interactions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model, input: [{ type: "user_input", content: [{ type: "text", text: prompt }] }] }),
+    });
+    if (!r.ok) { res.writeHead(r.status, { "Content-Type": "text/plain" }).end((await r.text()).slice(0, 500)); return; }
+    let j = await r.json();
+    // 作曲が終わる前に返ると steps がまだ無い（status が completed でない）。終わるまで同じ interaction を問い合わせる
+    const deadline = Date.now() + 150_000;
+    while (!interactionContents(j).some((c) => c.type === "audio" && c.data) && isPending(j.status) && j.id && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const g = await fetch(`${vertexBase()}/interactions/${encodeURIComponent(j.id)}`, { headers: { Authorization: `Bearer ${await vertexToken()}` } });
+      if (!g.ok) { res.writeHead(g.status, { "Content-Type": "text/plain" }).end((await g.text()).slice(0, 500)); return; }
+      j = await g.json();
+    }
+    const contents = interactionContents(j);
+    const audio = contents.find((c) => c.type === "audio" && c.data);
+    if (!audio) {
+      // 原因を追えるよう、状態と返ってきた項目の名前を返す
+      const detail = `Vertex interactions が音声を返しませんでした（status: ${j.status ?? "なし"}、項目: ${Object.keys(j).join(", ")}）`;
+      console.error(detail);
+      res.writeHead(502, { "Content-Type": "text/plain" }).end(detail);
+      return;
+    }
+    out = { audio: audio.data, mime: audio.mime_type ?? audio.mimeType ?? null, text: contents.filter((c) => c.type === "text").map((c) => c.text).join("\n"), model };
+  } else {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": KEY },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["AUDIO", "TEXT"] } }),
+    });
+    if (!r.ok) { res.writeHead(r.status, { "Content-Type": "text/plain" }).end((await r.text()).slice(0, 500)); return; }
+    const j = await r.json();
+    const parts = j.candidates?.[0]?.content?.parts ?? [];
+    const audio = parts.find((p) => p.inlineData?.data);
+    out = { audio: audio?.inlineData.data ?? null, mime: audio?.inlineData.mimeType ?? null, text: parts.filter((p) => p.text).map((p) => p.text).join("\n"), model: j.modelVersion ?? model };
+  }
   res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(out));
+}
+
+/** interaction の生成結果（steps[].content[]）を平らにする。outputs[] で返る形にも備える */
+function interactionContents(j) {
+  return [...(j.steps ?? []).flatMap((s) => s.content ?? []), ...(j.outputs ?? [])];
+}
+/** まだ作曲中の状態か（completed・failed・cancelled 以外。status が無ければ終わったものとみなす） */
+function isPending(status) {
+  return typeof status === "string" && !/^(completed|failed|cancelled|canceled|incomplete)$/i.test(status);
 }
 
 /** 音声を muscriptor に送り、SSE で返ってくる音符のイベントを集めて JSON で返す */
