@@ -2,7 +2,9 @@
 
 Lyria に弾いてもらったフレーズを耳コピして、ピアノロール上に「ゴーストノート」として重ねるミニ DAW。生成は既定で1案。生成数と同時生成数を、それぞれ1〜4から選べる。どの音を採用するかは人が聴き比べて決め、採用した理由も記録する。
 
-GDGoC Japan Devfest 2026 Hackathon（テーマ "Own the Why, Build with Intent."）向けの試作。経緯、検証結果、既存製品との違い、今後の計画は [docs/経緯と設計.md](docs/経緯と設計.md) にまとめてある。公開の手順は [docs/公開手順.md](docs/公開手順.md)。
+GDGoC Japan Devfest 2026 Hackathon（テーマ "Own the Why, Build with Intent."）向けの作品．
+
+公開サイト：[Ghostnotes](https://ghostnotes-1007513721749.asia-northeast1.run.app/)．APIキーの入力は不要．事前生成データで試す場合は [デモモード](https://ghostnotes-1007513721749.asia-northeast1.run.app/?demo) を開く．公開の手順は [docs/公開手順.md](docs/公開手順.md) を参照．
 
 ## 試聴比較
 
@@ -32,7 +34,7 @@ npm run dev               # 画面（http://127.0.0.1:5173）。/api と /ws は
 - 音源はMuScriptor公式配布のMuseScore General。フルート・ピアノ・マリンバ・ベース・ドラムの再生とWAV出力に使う。配布元とライセンスは [音源のライセンス](public/soundfonts/LICENSE-MuseScore-General.txt)。初回再生時に約38MBを読み込む。
 
 - `?demo` を付けて開くと、事前に生成した2案をすぐ出すボタンが出る（実演で生成が遅れたとき用。`npm run make-demo` で作り直せる）。
-- `npm run build` のあと `npm start` で、本番と同じ構成（中継サーバーが画面も配信する）で動く。
+- `npm run build` のあと `npm run server` で，本番と同じ構成（中継サーバーが画面も配信する）で動く．`npm start` を使う場合，環境変数は起動前に設定する（`.env` は読み込まない）．
 
 ## 使い方
 
@@ -66,8 +68,6 @@ node scripts/smoke-roll.mjs                         # ノートのドラッグ�
 bash scripts/eval-l35.sh                            # Lyria 3.5 / 3 Clip がテンポ・キー・長さを守るかを測る
 bash scripts/eval-batch.sh                          # Lyria に10本弾かせ、耳コピの一致度とテンポを測る
 ```
-
-設計ドキュメントを共有用の HTML にするには `npm run doc-page`（`out/ghostnotes-design.html` に出る）。
 
 ## 構成
 
