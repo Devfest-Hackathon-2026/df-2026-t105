@@ -11,6 +11,7 @@ AIが生成したフレーズを聴き比べ，使いたい音を選んで曲に
 - [@yi7242](https://github.com/yi7242)
 - [@CompassSN](https://github.com/CompassSN)
 - [@tetsugo02](https://github.com/tetsugo02)
+- [@MrHate](https://github.com/MrHate)
 
 ## プロジェクト紹介
 
