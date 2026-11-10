@@ -79,14 +79,14 @@ npm run server
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/deployment-dark.png">
-  <img src="docs/images/deployment.png" alt="Ghostnotesのデプロイ構成．開発リポジトリのmainが更新されると，GitHub ActionsがWorkload Identity FederationでGoogle Cloudに入り，Cloud BuildとArtifact Registryを経てCloud Runへデプロイし，提出用リポジトリにもpushする．ブラウザはBasic認証でCloud Runに接続し，Cloud Runは実行用サービスアカウントでVertex AIのGeminiとLyriaを呼ぶ．パスワードはSecret Managerから渡す．">
+  <img src="docs/images/deployment.png" alt="Ghostnotesのデプロイ構成．開発リポジトリのmainが更新されると，GitHub ActionsがWorkload Identity FederationでGoogle Cloudに入り，Cloud BuildとArtifact Registryを経てCloud Runへデプロイし，提出用リポジトリにもpushする．ブラウザはパスワードでログインしてCloud Runに接続し，Cloud Runは実行用サービスアカウントでVertex AIのGeminiとLyriaを呼ぶ．パスワードはSecret Managerから渡す．">
 </picture>
 
 青の実線は実行時の通信，灰色の実線はシークレットの供給，破線はGitHub ActionsによるCI/CDを示す．[図のHTMLソース](docs/images/deployment.html)も参照できる．
 
 画面と中継サーバーを1つのコンテナにまとめる．公開版はGemini API（AI Studio）を使わず，Vertex AIだけでGeminiとLyriaを呼ぶ．Vertexへは実行用サービスアカウントの権限で接続するため，APIキーは持たない．Vertexでは Lyria 3.5 と RealTime が使えないので，「Lyria 3.5」を選ぶと Lyria 3 Pro で生成する．
 
-サイトにはパスワード（Basic認証）をかける．パスワードはSecret Managerの `ghostnotes-app-password` に置き，実行時に環境変数 `APP_PASSWORD` として渡す．ブラウザで開くとパスワードを聞かれる．ユーザー名は何でもよい．
+サイトにはパスワードをかける．パスワードはSecret Managerの `ghostnotes-app-password` に置き，実行時に環境変数 `APP_PASSWORD` として渡す．開くとパスワードだけのログイン画面が出て，正しく入れると7日間ログインしたままになる．ログアウトは `/logout`．
 
 ### GitHub Actions
 
