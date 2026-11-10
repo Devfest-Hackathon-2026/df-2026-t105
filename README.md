@@ -4,7 +4,7 @@ AIが生成したフレーズを聴き比べ，使いたい音を選んで曲に
 
 [アプリを開く](https://ghostnotes-1007513721749.asia-northeast1.run.app/) · [デモを試す](https://ghostnotes-1007513721749.asia-northeast1.run.app/?demo)
 
-公開版はAPIキーの入力が不要．デモでは事前生成した2案を読み込み，生成APIを呼ばずに採用・編集・書き出しを試せる．
+公開版はパスワードで保護している．パスワードはチームから受け取る．APIキーの入力は不要．デモでは事前生成した2案を読み込み，生成APIを呼ばずに採用・編集・書き出しを試せる．
 
 ## メンバー
 
@@ -37,7 +37,7 @@ MuScriptorを起動していない環境では，ブラウザ側のBasic Pitch�
 
 ## ローカルへの導入
 
-Node.js 22系の新しいバージョンとnpm，Gemini APIのキーを用意する．キーは中継サーバーが持ち，画面のAPIキー欄は空のまま使う．
+Node.js 22系の新しいバージョンとnpm，Vertex AIを有効にしたGCPプロジェクトとgcloud CLIを用意する．中継サーバーは `gcloud auth print-access-token` で得たトークンでVertex AIを呼ぶので，先に `gcloud auth login` を済ませる．画面のAPIキー欄は空のまま使う．
 
 ```bash
 git clone https://github.com/Devfest-Hackathon-2026/df-2026-t105.git
@@ -46,10 +46,10 @@ npm ci
 cp .env.example .env
 ```
 
-`.env` にキーを設定する．Gemini APIを使う場合，`VERTEX_PROJECT` は設定しない．
+`.env` にプロジェクトIDを設定する．`APP_PASSWORD` を設定すると，手元でもパスワードを求める．
 
 ```dotenv
-GEMINI_API_KEY=your_api_key
+VERTEX_PROJECT=your_project_id
 ```
 
 ターミナルを2つ開き，それぞれ起動する．
@@ -79,10 +79,10 @@ npm run server
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/deployment-dark.png">
-  <img src="docs/images/deployment.png" alt="Ghostnotesのデプロイ構成．GitHubのmainからgcloudでCloud Buildへソースを送り，Artifact Registry経由でCloud Runへデプロイする．ブラウザはCloud Runへ接続する．図はGemini APIのキーを使っていたときの構成で，現在はVertex AIを使う．">
+  <img src="docs/images/deployment.png" alt="Ghostnotesのデプロイ構成．開発リポジトリのmainが更新されると，GitHub ActionsがWorkload Identity FederationでGoogle Cloudに入り，Cloud BuildとArtifact Registryを経てCloud Runへデプロイし，提出用リポジトリにもpushする．ブラウザはBasic認証でCloud Runに接続し，Cloud Runは実行用サービスアカウントでVertex AIのGeminiとLyriaを呼ぶ．パスワードはSecret Managerから渡す．">
 </picture>
 
-実線は実行時の通信，破線はビルド・デプロイを示す．現在はGitHub Actionsからデプロイし，GeminiとLyriaはVertex AIで呼ぶ（図は更新前）．[図のHTMLソース](docs/images/deployment.html)も参照できる．
+青の実線は実行時の通信，灰色の実線はシークレットの供給，破線はGitHub ActionsによるCI/CDを示す．[図のHTMLソース](docs/images/deployment.html)も参照できる．
 
 画面と中継サーバーを1つのコンテナにまとめる．公開版はGemini API（AI Studio）を使わず，Vertex AIだけでGeminiとLyriaを呼ぶ．Vertexへは実行用サービスアカウントの権限で接続するため，APIキーは持たない．Vertexでは Lyria 3.5 と RealTime が使えないので，「Lyria 3.5」を選ぶと Lyria 3 Pro で生成する．
 
