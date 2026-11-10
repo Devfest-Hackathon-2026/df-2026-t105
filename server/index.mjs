@@ -27,7 +27,7 @@ const KEY = process.env.GEMINI_API_KEY;
 const VERTEX_PROJECT = process.env.VERTEX_PROJECT;
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION ?? "global";
 // Vertex で使う Gemini のモデル（AI Studio の gemini-flash-latest のような別名は Vertex にはない）
-const VERTEX_GEMINI_MODEL = process.env.VERTEX_GEMINI_MODEL ?? "gemini-3-flash-preview";
+const VERTEX_GEMINI_MODEL = process.env.VERTEX_GEMINI_MODEL ?? "gemini-3.8-flash";
 if (!KEY && !VERTEX_PROJECT) {
   console.error("VERTEX_PROJECT（Vertex AI のプロジェクト ID）を設定してください");
   process.exit(1);
