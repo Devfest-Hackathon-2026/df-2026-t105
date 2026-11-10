@@ -273,3 +273,5 @@ export function trackRange(p: Project, id: TrackId): [number,number] {
 
 /** 音の同一性を見るためのキー（高さと位置） */
 export const noteKey = (n: Note) => `${n.pitch}@${n.step.toFixed(3)}`;
+/** 音の中身すべて（高さ・位置・長さ・強さ）を比べるためのキー */
+export const noteSignature = (n: Note) => `${noteKey(n)}|${n.len.toFixed(3)}|${n.vel.toFixed(2)}`;

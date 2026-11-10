@@ -208,11 +208,18 @@ export function sanitizeRevision(
     const pitch = Math.round(r.pitch);
     if (step < from - 1e-6 || step >= to || pitch < lo || pitch > hi) continue;
     const len = Math.max(0.25, Math.min(r.beats * 4, to - step));
-    // 元の提案に、同じ高さで 1/16 未満しかずれていない音があれば、それを残したものとみなす
-    const same = ghost.notes.find((n) => !used.has(n) && n.pitch === pitch && Math.abs(n.step - step) < 1 && Math.abs(n.len - len) < 1);
-    if (same) { used.add(same); out.push({ ...same }); continue; }
-    const vel = Number.isFinite(r.velocity) ? Math.max(0.05, Math.min(1, r.velocity!)) : avgVel;
-    out.push({ step, len, pitch, vel });
+    const vel = Number.isFinite(r.velocity) ? Math.max(0.05, Math.min(1, r.velocity!)) : undefined;
+    // 渡した値は小数3桁に丸めているので、その誤差（0.01 ステップ）以内なら元の音とみなす。
+    // 位置は元の値を保ち（耳コピの細かい発音時刻を崩さない）、長さと強さは AI が変えたときだけ新しい値にする
+    const same = ghost.notes.find((n) => !used.has(n) && n.pitch === pitch && Math.abs(n.step - step) < 0.01);
+    if (same) {
+      used.add(same);
+      const sameLen = Math.abs(r.beats * 4 - same.len) < 0.01;
+      const sameVel = vel === undefined || Math.abs(vel - same.vel) < 0.01;
+      out.push({ ...same, len: sameLen ? same.len : len, vel: sameVel ? same.vel : vel! });
+      continue;
+    }
+    out.push({ step, len, pitch, vel: vel ?? avgVel });
   }
   // 同じ位置・同じ高さの重複を除く
   const seen = new Set<string>();

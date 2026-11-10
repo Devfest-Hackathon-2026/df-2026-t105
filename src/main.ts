@@ -11,7 +11,7 @@ import { intentToSpecs, reviseGhost } from "./gemini";
 import { buildClipPrompt, generate, generateClip, serverConfig, slice, type ClipModel } from "./lyria";
 import { KEY_W, Roll, type RollTool } from "./roll";
 import { VelocityLane } from "./velocity";
-import { contentBars, demoProject, describeForLyria, load, noteKey, save, trackRole, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
+import { contentBars, demoProject, describeForLyria, load, noteKey, noteSignature, save, trackRole, type Ghost, type LyriaSpec, type Note, type Project, type TrackId } from "./state";
 import { toMono22k, transcribe, warmUp } from "./transcribe";
 import { estimateStartSec, transcribeDrums } from "./core/drums.js";
 import { drumsToGhost, transcribeWithMuscriptor, transcribeWithMuscriptorDetailed } from "./muscriptor";
@@ -1279,8 +1279,16 @@ async function reviseCurrent(instruction: string) {
     const startStep = g.startStep ?? 0, bars = g.bars ?? project.bars;
     const r = await reviseGhost(apiKeyInput.value.trim(), project, id, { notes: source, startStep, bars }, g.intent, instruction);
     if (!r.notes.length) throw new Error("修正案に音がありませんでした");
-    const before = new Set(source.map(noteKey)), after = new Set(r.notes.map(noteKey));
-    const changed = r.notes.filter((n) => !before.has(noteKey(n))).map(noteKey);
+    // 待っている間に提案が閉じられたり、新しい生成で置き換わったりしていたら、結果は捨てる
+    const now = project.tracks[id];
+    if (now !== t || !(t.alts ?? (t.ghost ? [t.ghost] : [])).includes(g)) {
+      setStatus("提案が閉じられたため、届いた修正案は使いませんでした");
+      return;
+    }
+    // 変えた音は、高さ・位置だけでなく長さ・強さも比べる（長さだけ伸ばす修正も拾うため）。
+    // 消した音は、同じ高さ・位置の音が修正案にないもの
+    const before = new Set(source.map(noteSignature)), after = new Set(r.notes.map(noteKey));
+    const changed = r.notes.filter((n) => !before.has(noteSignature(n))).map(noteKey);
     const removed = source.filter((n) => !after.has(noteKey(n)));
     if (!changed.length && !removed.length) { setStatus(`AI は直すところがないと判断しました。${r.summary}`); return; }
     const alts = (t.alts ??= [g]);
